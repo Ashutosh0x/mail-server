@@ -1,9 +1,9 @@
 /**
  * Minimal request validation.
  *
- * Deliberately NOT marked `server-only`: it is pure, it is used by API routes
- * and could be reused by a client-side form, and marking it would only make it
- * untestable outside a server component for no security benefit.
+ * Deliberately NOT marked `server-only`: it is pure, it holds no secrets and
+ * no database access, and the same rules are worth reusing in a client-side
+ * form so a user sees the error before a round trip.
 
  *
  * Hand-written rather than a schema library: the surface is small, and every

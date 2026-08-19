@@ -61,9 +61,32 @@ export const config = {
   /** Where SQLite lives in development. */
   databaseFile: process.env.DATABASE_FILE ?? ".data/mailserver.db",
 
-  /** Where attachment bytes live. Object storage in production. */
-  storageDriver: (process.env.OBJECT_STORAGE_DRIVER ?? "filesystem") as "filesystem" | "s3",
+  /**
+   * Where object bytes live.
+   *
+   * `filesystem` is local disk, for development and single-node installs.
+   * `nfs` is the same POSIX I/O with mount verification and NFS error
+   * semantics on top — see lib/server/storage/nfs.ts. An unimplemented
+   * value throws at first use rather than falling back to local disk.
+   */
+  storageDriver: (process.env.OBJECT_STORAGE_DRIVER ?? "filesystem") as
+    | "filesystem"
+    | "nfs"
+    | "s3",
   storageRoot: process.env.OBJECT_STORAGE_ROOT ?? ".data/blobs",
+
+  /**
+   * Refuse to serve when the NFS root turns out to be a local directory.
+   *
+   * An unmounted export is usually still a valid empty local directory at
+   * the same path, so writes succeed onto the wrong disk — invisible to
+   * other nodes and absent from backups. Disable only to run the NFS
+   * provider against local storage deliberately, e.g. in a test.
+   */
+  nfsRequireNetworkFs: process.env.NFS_REQUIRE_NETWORK_FS !== "false",
+
+  /** Write-read round trip above this many ms reports the mount degraded. */
+  nfsDegradedAboveMs: int("NFS_DEGRADED_ABOVE_MS", 250),
 
   /** Set to enable outbound SMTP. Absent means sending fails loudly. */
   smtp: {

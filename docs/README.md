@@ -24,6 +24,7 @@ what is built.** Where any other document disagrees with it, it wins.
 | [Database](database.md) | Dual-dialect schema and the migration runner |
 | [Search grammar](search.md) | The query language shared by chips and SQL |
 | [Connectors](connectors.md) | The provider registry and the connector contract |
+| [Storage architecture](STORAGE-ARCHITECTURE.md) | Providers, NFS mount verification, real health checks |
 
 ## For people reviewing it
 
@@ -44,6 +45,7 @@ what is built.** Where any other document disagrees with it, it wins.
 | [0005](adr/0005-provider-credential-security.md) | AES-256-GCM with the row id as AAD |
 | [0006](adr/0006-benchmark-methodology.md) | What may be called a measurement |
 | [0007](adr/0007-stalwart-as-infrastructure-authority.md) | Stalwart owns the protocols; we own the product |
+| [0008](adr/0008-storage-provider-architecture.md) | One provider interface; NFS extends filesystem; health checks do real I/O |
 
 ## Three rules that run through all of it
 

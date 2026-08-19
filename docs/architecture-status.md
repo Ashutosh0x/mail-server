@@ -1,7 +1,7 @@
 # Architecture status
 
 **Last updated:** 2026-08-20
-**Baseline:** `turbo typecheck` 3/3 · `turbo test` 122 passing · `next build` clean
+**Baseline:** `turbo typecheck` 3/3 · `turbo test` 194 passing · `next build` clean
 
 This is the single source of truth for what exists. It supersedes every status
 claim in the original planning blueprints. Where this file and a blueprint
@@ -41,12 +41,13 @@ therefore `VERIFIED` **upstream** and `BLOCKED` locally, and both are shown.
 | **Contacts** | `PLANNED` — **rearchitected** | Was "ground-up datastore". Superseded by ADR-0003 | Build a CardDAV client layer |
 | **CardDAV** | `VERIFIED` upstream | RFC 6352, vCard address books, sync via RFC 6578 sync-tokens | Consume it |
 | **WebDAV** | `VERIFIED` upstream | RFC 4918 with locking, blob dedup, quota checks, `PrincipalPropFind`. Depth `Infinity` disallowed on file collections | Scope against Drive CAS per ADR-0007 §WebDAV |
-| **Drive — native storage** | `PARTIALLY_IMPLEMENTED` | `lib/server/storage.ts` filesystem driver with path-escape checks; streaming upload with mid-stream size cap | S3 driver; content addressing |
+| **Drive — native storage** | `PARTIALLY_IMPLEMENTED` | `lib/server/storage/` provider layer: filesystem + NFS with real health probes, atomic writes, ranges; 27 tests | S3 provider; reconciliation; the Drive product itself |
 | **External storage federation (core)** | `IMPLEMENTED` | `packages/types/src/storage.ts`, 24 tests in `storage.spec.ts`, migration `0003` | Hold the model; add connectors in phases |
 | **Google Drive connector** | `PLANNED` | `PROVIDERS.google_drive.status === "planned"` | Phase 2 (ADR-0004) |
 | **Dropbox connector** | `PLANNED` | Registry `planned` | Phase 4 |
 | **OneDrive / SharePoint connector** | `PLANNED` | Registry `planned`, modelled separately | Phase 3 |
 | **S3 connector** | `PLANNED` | Registry `planned` | **Phase 1 — the first connector to build** |
+| **NFS storage provider** | `IMPLEMENTED` (unverified against a real export) | `lib/server/storage/nfs.ts`; mount verification via statfs magic + device-id boundary; ESTALE as a backend fault | Mount a real export and re-verify |
 | **Box / Egnyte connectors** | `PLANNED` | Registry `planned`. Egnyte's own Workspace integration is Legacy | Phase 4 |
 | **WebDAV / SFTP connectors** | `PLANNED` | Registry `planned` | Phase 5 |
 | **SMB / NFS connectors** | `PLANNED` | Registry `planned`, host-mounted only | Phase 6, evaluate first |
