@@ -1,4 +1,14 @@
 import type { Label, Mailbox, Thread } from "@mailserver/types";
+import type {
+  AccountOverview,
+  AccountProfile,
+  AuditEntry,
+  PasskeyRecord,
+  Preferences,
+  SecurityPosture,
+  SessionRecord,
+  StorageUsage,
+} from "./account-types";
 
 /**
  * Browser-side API client.
@@ -139,4 +149,51 @@ export const api = {
       signal?.addEventListener("abort", () => xhr.abort());
       xhr.send(file);
     }),
+
+  // ── Account center ───────────────────────────────────────────────────────
+
+  /** Identity, security posture and storage in one request — the menu needs all three at once. */
+  account: () => request<AccountOverview>("/api/account"),
+
+  updateProfile: (patch: { displayName?: string; timezone?: string; language?: string }) =>
+    request<{ profile: AccountProfile }>("/api/account/profile", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  security: () =>
+    request<{ posture: SecurityPosture; sessions: SessionRecord[]; activity: AuditEntry[] }>(
+      "/api/account/security"
+    ),
+
+  sessions: () => request<{ sessions: SessionRecord[] }>("/api/account/sessions"),
+
+  revokeSession: (id: string) =>
+    request<{ revoked: number }>(`/api/account/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  revokeOtherSessions: () =>
+    request<{ revoked: number }>("/api/account/sessions/revoke-all", { method: "POST" }),
+
+  storage: () =>
+    request<{ storage: StorageUsage; unavailable: { cleanupTools: string } }>("/api/account/storage"),
+
+  preferences: () => request<{ preferences: Preferences }>("/api/account/preferences"),
+
+  updatePreferences: (patch: DeepPartial<Preferences>) =>
+    request<{ preferences: Preferences }>("/api/account/preferences", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  passkeys: () => request<{ passkeys: PasskeyRecord[] }>("/api/account/passkeys"),
+
+  revokePasskey: (id: string) =>
+    request<{ revoked: number }>(`/api/account/passkeys/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
+
+/** One section of preferences at a time, without restating every field. */
+type DeepPartial<T> = { [K in keyof T]?: Partial<T[K]> };

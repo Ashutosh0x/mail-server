@@ -15,9 +15,9 @@ describe("icon registry", () => {
   it("covers every catalog category", () => {
     expect(Object.keys(icons).sort()).toEqual(
       [
-        "admin", "ai", "calendar", "chrome", "contacts", "dns", "editor",
-        "fileType", "infra", "mailbox", "messageState", "mobile", "search",
-        "security", "settings", "status", "threadAction",
+        "account", "admin", "ai", "calendar", "chrome", "contacts", "dns",
+        "editor", "fileType", "infra", "mailbox", "messageState", "mobile",
+        "search", "security", "settings", "status", "threadAction",
       ].sort()
     );
   });

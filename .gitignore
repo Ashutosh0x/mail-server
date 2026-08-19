@@ -44,3 +44,6 @@ yarn-error.log*
 
 # Local database and blob storage
 .data/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

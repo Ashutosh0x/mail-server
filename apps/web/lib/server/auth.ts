@@ -143,6 +143,22 @@ export async function currentUser(): Promise<SessionUser | null> {
   };
 }
 
+/**
+ * The row id of the caller's own session.
+ *
+ * Lives here rather than in the account layer so the cookie name and the token
+ * hashing have exactly one definition — a second copy of either is a bug that
+ * only shows up when one of them changes.
+ */
+export async function currentSessionId(): Promise<string | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const row = db()
+    .prepare(`SELECT id FROM sessions WHERE token_hash = ? AND revoked_at IS NULL`)
+    .get(hashToken(token)) as { id?: string } | undefined;
+  return row?.id ?? null;
+}
+
 export async function revokeCurrentSession(): Promise<void> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return;

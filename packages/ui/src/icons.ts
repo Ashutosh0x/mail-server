@@ -40,9 +40,9 @@ import {
   ScanFace, ScrollText, Search, SearchX, Send, SendHorizontal,
   SeparatorHorizontal, Server, ServerCrash, ServerOff, Settings, Settings2,
   Share2, Shield, ShieldAlert, ShieldBan, ShieldCheck, ShieldOff, ShieldX,
-  Signature, SlidersHorizontal, Smartphone, Smile, SmilePlus, Sparkles,
+  Signature, SlidersHorizontal, Smartphone, Smile, SmilePlus, Sparkles, Plug,
   SpellCheck, Split, Square, Stamp, Star, Strikethrough, Subscript, Sun,
-  Superscript, Table, Tag, Tags, Terminal, TextQuote, Trash2, TrendingDown,
+  Superscript, Table, Tablet, Tag, Tags, Terminal, TextQuote, Trash2, TrendingDown,
   TrendingUp, Type, Underline, Undo2, Unlink, Upload, UserCheck, UserCog,
   UserMinus, UserPlus, UserX, Users, Video, Volume2, VolumeX, Wand2, Wifi,
   WifiOff, Workflow, Wrench, X, ZoomIn, ZoomOut,
@@ -431,6 +431,32 @@ export const chrome = {
   fullscreen: Maximize,
 } as const;
 
+/**
+ * The account center.
+ *
+ * Split from `settings` because these name places a user GOES (profile,
+ * security, devices), while `settings` names things a user CHANGES. The
+ * profile menu is navigation, so it reads from here.
+ */
+export const account = {
+  profile: UserCog,
+  security: ShieldCheck,
+  securityAlert: ShieldAlert,
+  devices: Laptop,
+  deviceDesktop: Laptop,
+  deviceMobile: Smartphone,
+  deviceTablet: Tablet,
+  deviceUnknown: Globe,
+  storage: HardDrive,
+  privacy: GlobeLock,
+  connectedApps: Plug,
+  developer: CodeXml,
+  organization: Building,
+  revoke: Trash2,
+  refresh: RefreshCw,
+  manage: ChevronRight,
+} as const;
+
 export const icons = {
   mailbox,
   messageState,
@@ -446,6 +472,7 @@ export const icons = {
   dns,
   admin,
   settings,
+  account,
   mobile,
   status,
   chrome,

@@ -314,3 +314,34 @@ body {
   white-space: nowrap;
   border-width: 0;
 }
+
+/*
+ * Menu and sheet entrances.
+ *
+ * Declared here rather than inline so the profile menu, and anything that
+ * follows it, share one motion vocabulary. Both are wrapped by callers in
+ * `motion-safe:`, and the reduced-motion block above already forces
+ * `animation-duration: 0.01ms` for anyone who has asked for less movement —
+ * so these never need a media query of their own.
+ */
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    /* Scales from the top-right, the corner it is anchored to, so it reads as
+       coming out of the avatar rather than appearing beside it. */
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

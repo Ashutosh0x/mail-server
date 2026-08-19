@@ -8,6 +8,9 @@ import { api, ApiError, type SessionInfo } from "@/lib/api";
 import { MailListItem, ROW_HEIGHT, type Density } from "./mail-list-item";
 import { ReadingPane } from "./reading-pane";
 import { Sidebar } from "./sidebar";
+import { ProfileMenu } from "./account/profile-menu";
+import { AccountCenter, type AccountSection } from "./account/account-center";
+import { ShortcutsDialog } from "./shortcuts-dialog";
 
 const DENSITIES = [
   { id: "compact" as const, label: "Compact", icon: icons.settings.densityCompact },
@@ -55,6 +58,10 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  /** Null when the account center is closed. */
+  const [accountSection, setAccountSection] = useState<AccountSection | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
@@ -166,6 +173,10 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
 
   // Keyboard map (Section 33). Ignored while a field has focus.
   useEffect(() => {
+    // An overlay owns the keyboard while it is open. Without this, `j` scrolls
+    // the message list behind the account center and Escape closes both.
+    if (accountSection !== null || shortcutsOpen) return undefined;
+
     let pendingG = false;
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -210,7 +221,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [visible, cursor, mailboxes, act]);
+  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen]);
 
   if (loading) {
     return (
@@ -301,15 +312,18 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
               <Icon icon={theme === "light" ? icons.settings.dark : icons.settings.light} size="md"
                     label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} />
             </button>
-            <button
-              type="button"
-              onClick={onSignOut}
-              title={`Signed in as ${user.email}`}
-              className="ml-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-ink-secondary hover:bg-surface-sunken hover:text-ink"
-            >
-              <Icon icon={icons.chrome.avatar} size="md" />
-              <span className="max-w-[14ch] truncate">{user.displayName}</span>
-            </button>
+            <div className="relative">
+              <ProfileMenu
+                user={{ displayName: user.displayName, email: user.email }}
+                onSignOut={onSignOut}
+                onOpenAccount={(section) => setAccountSection((section as AccountSection) ?? "profile")}
+                theme={theme}
+                onThemeChange={setTheme}
+                density={density}
+                onDensityChange={setDensity}
+                onShowShortcuts={() => setShortcutsOpen(true)}
+              />
+            </div>
           </div>
         </header>
 
@@ -433,6 +447,16 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
           {toast}
         </div>
       )}
+
+      {accountSection !== null && (
+        <AccountCenter
+          section={accountSection}
+          onSectionChange={setAccountSection}
+          onClose={() => setAccountSection(null)}
+        />
+      )}
+
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     </div>
   );
 }
