@@ -14,6 +14,7 @@ import type {
 import { Avatar } from "./avatar";
 import { SecurityChecklist } from "./security-status";
 import { StorageUsage } from "./storage-usage";
+import { useMotion } from "@/lib/motion-preference";
 
 /**
  * The full account center.
@@ -29,6 +30,7 @@ import { StorageUsage } from "./storage-usage";
 
 export type AccountSection =
   | "profile"
+  | "appearance"
   | "security"
   | "devices"
   | "storage"
@@ -37,6 +39,7 @@ export type AccountSection =
 
 const SECTIONS: { id: AccountSection; label: string; icon: LucideIcon }[] = [
   { id: "profile", label: "Profile", icon: icons.contacts.card },
+  { id: "appearance", label: "Appearance", icon: icons.settings.theme },
   { id: "security", label: "Security", icon: icons.account.security },
   { id: "devices", label: "Devices & sessions", icon: icons.account.devices },
   { id: "storage", label: "Storage", icon: icons.account.storage },
@@ -117,6 +120,7 @@ export function AccountCenter({
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
             {section === "profile" && <ProfileSection />}
+            {section === "appearance" && <AppearanceSection />}
             {section === "security" && <SecuritySection />}
             {section === "devices" && <DevicesSection />}
             {section === "storage" && <StorageSection />}
@@ -818,6 +822,65 @@ function NotificationsSection() {
         These preferences are stored, but nothing delivers a notification yet — there is no mail
         transport, so no message arrives to notify you about.
       </p>
+    </>
+  );
+}
+
+
+function AppearanceSection() {
+  const { prefs, error, loading, reload, patch, saving } = usePreferences();
+  const { systemReduced } = useMotion();
+
+  if (loading) return <Loading />;
+  if (error) return <Failed message={error} onRetry={reload} />;
+  if (!prefs) return null;
+
+  return (
+    <>
+      <SectionHeading
+        title="Appearance"
+        description="How dense the interface is, and how much it moves."
+      />
+
+      <Card className="mb-4">
+        <Choice
+          label="Density"
+          description="How much vertical space each message row takes."
+          value={prefs.appearance.density}
+          options={[
+            { id: "compact" as const, label: "Compact", hint: "36px rows. Most messages on screen." },
+            { id: "comfortable" as const, label: "Comfortable", hint: "56px rows." },
+            { id: "spacious" as const, label: "Spacious", hint: "76px rows. Two-line previews." },
+          ]}
+          onChange={(density) => void patch({ appearance: { density } })}
+        />
+      </Card>
+
+      <Card className="mb-4 divide-y divide-border">
+        <Toggle
+          label="Reduce motion"
+          description={
+            systemReduced
+              ? "Your system already requests reduced motion, so animations are minimised regardless of this setting."
+              : "Remove decorative animation. State changes still happen, they just stop moving."
+          }
+          checked={prefs.appearance.reducedMotion || systemReduced}
+          disabled={saving || systemReduced}
+          onChange={(reducedMotion) => void patch({ appearance: { reducedMotion } })}
+        />
+        <Toggle
+          label="Message preview"
+          description="Show a line of the message body in the list."
+          checked={prefs.appearance.messagePreview}
+          disabled={saving}
+          onChange={(messagePreview) => void patch({ appearance: { messagePreview } })}
+        />
+      </Card>
+
+      <NotBuilt
+        title="Match system theme"
+        reason="The light/dark toggle in the header applies per session and is not yet persisted to your account."
+      />
     </>
   );
 }

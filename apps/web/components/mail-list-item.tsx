@@ -1,7 +1,9 @@
 "use client";
 
 import type { Thread } from "@mailserver/types";
-import { Icon, cn, icons } from "@mailserver/ui";
+import { useState } from "react";
+import { Icon, cn, haptics, icons } from "@mailserver/ui";
+import { useMotion } from "@/lib/motion-preference";
 import { formatListTimestamp, initialsOf, senderLabel } from "@/lib/format";
 import { VerdictBadge } from "./verdict-badge";
 
@@ -39,6 +41,8 @@ export function MailListItem({
   onToggleSelect: () => void;
   onToggleStar: () => void;
 }) {
+  const [pulse, setPulse] = useState(false);
+  const { reduced } = useMotion();
   const { latest } = thread;
   const unread = thread.unreadCount > 0;
   const starred = latest.keywords.includes("$flagged");
@@ -69,10 +73,11 @@ export function MailListItem({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          haptics.selection();
           onToggleSelect();
         }}
         aria-label={selected ? `Deselect ${latest.subject}` : `Select ${latest.subject}`}
-        className="shrink-0 text-ink-muted hover:text-ink"
+        className="shrink-0 text-ink-muted transition-transform duration-[--duration-instant] hover:text-ink active:scale-90"
       >
         <Icon icon={selected ? icons.messageState.checkboxOn : icons.messageState.checkboxOff} size="sm" />
       </button>
@@ -81,13 +86,29 @@ export function MailListItem({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          // Pulse only on the transition INTO starred. Animating the unstar
+          // too would draw the eye to something being taken away, and
+          // animating on mount would make every scroll a fireworks display.
+          if (!starred) {
+            setPulse(true);
+            haptics.selection();
+          }
           onToggleStar();
         }}
         aria-label={starred ? `Unstar ${latest.subject}` : `Star ${latest.subject}`}
         aria-pressed={starred}
-        className={cn("shrink-0", starred ? "text-starred" : "text-ink-disabled hover:text-ink-muted")}
+        className={cn(
+          "shrink-0 transition-colors duration-[--duration-micro]",
+          starred ? "text-starred" : "text-ink-disabled hover:text-ink-muted"
+        )}
       >
-        <Icon icon={icons.mailbox.starred} size="sm" filled={starred} />
+        <Icon
+          icon={icons.mailbox.starred}
+          size="sm"
+          filled={starred}
+          onAnimationEnd={() => setPulse(false)}
+          className={cn(pulse && !reduced && "animate-[starPulse_280ms_cubic-bezier(0.2,0,0,1)]")}
+        />
       </button>
 
       {density !== "compact" && (

@@ -5,6 +5,8 @@ import { Icon, icons } from "@mailserver/ui";
 import { api, ApiError, type SessionInfo } from "@/lib/api";
 import { MailClient } from "@/components/mail-client";
 import { AuthScreen } from "@/components/auth-screen";
+import { ToastProvider } from "@/components/interaction/toast";
+import { MotionProvider } from "@/lib/motion-preference";
 
 /**
  * Composition root.
@@ -16,6 +18,7 @@ export default function Page() {
   const [user, setUser] = useState<SessionInfo | null>(null);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -32,6 +35,22 @@ export default function Page() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // The account's own reduced-motion setting, fetched once signed in. Failure
+  // is not fatal: motion stays on and the OS media query still applies.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void api
+      .preferences()
+      .then(({ preferences }) => {
+        if (!cancelled) setReducedMotion(preferences.appearance.reducedMotion);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const signOut = useCallback(async () => {
     await api.logout().catch(() => undefined);
@@ -64,5 +83,14 @@ export default function Page() {
   }
 
   if (!user) return <AuthScreen onAuthenticated={refresh} />;
-  return <MailClient user={user} onSignOut={signOut} />;
+
+  return (
+    // MotionProvider outermost: the toast layer animates too, and both need
+    // the same answer to "should anything move?".
+    <MotionProvider appReduced={reducedMotion} onAppReducedChange={setReducedMotion}>
+      <ToastProvider>
+        <MailClient user={user} onSignOut={signOut} />
+      </ToastProvider>
+    </MotionProvider>
+  );
 }

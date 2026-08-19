@@ -8,6 +8,10 @@ import { api, ApiError, type SessionInfo } from "@/lib/api";
 import { MailListItem, ROW_HEIGHT, type Density } from "./mail-list-item";
 import { ReadingPane } from "./reading-pane";
 import { Sidebar } from "./sidebar";
+import { useToast } from "./interaction/toast";
+import { useFlipList } from "./interaction/use-flip-list";
+import { MailListSkeleton } from "./interaction/skeleton";
+import { Swipeable } from "./interaction/swipeable";
 import { ProfileMenu } from "./account/profile-menu";
 import { AccountCenter, type AccountSection } from "./account/account-center";
 import { ShortcutsDialog } from "./shortcuts-dialog";
@@ -41,12 +45,47 @@ function emptyStateFor(role: Mailbox["role"], searching: boolean) {
   }
 }
 
+/**
+ * The real inverse of each action, used by Undo.
+ *
+ * Only actions with a genuine reversal appear here. `delete` is absent
+ * because nothing restores a permanently deleted message, and offering Undo
+ * for it would be a promise the backend cannot keep.
+ */
+const INVERSE_ACTION: Record<string, string | undefined> = {
+  archive: "restore",
+  trash: "restore",
+  spam: "restore",
+  read: "unread",
+  unread: "read",
+  star: "unstar",
+  unstar: "star",
+};
+
+const PAST_TENSE: Record<string, string> = {
+  archive: "archived",
+  trash: "moved to trash",
+  spam: "marked as spam",
+  restore: "restored",
+  read: "marked read",
+  unread: "marked unread",
+  star: "starred",
+  unstar: "unstarred",
+  delete: "deleted",
+};
+
 export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: () => void }) {
   const [mailboxes, setMailboxes] = useState<Mailbox[] | null>(null);
   const [labels, setLabels] = useState<Label[]>([]);
   const [threads, setThreads] = useState<Thread[] | null>(null);
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+  // Rows below a removed message slide up to close the gap rather than
+  // jumping. Keyed on the thread ids, which is exactly what changes when
+  // the list reorders.
+  const threadIds = useMemo(() => (threads ?? []).map((thread) => thread.id), [threads]);
+  const { register, measure } = useFlipList(threadIds);
 
   const [activeMailboxId, setActiveMailboxId] = useState<string | null>(null);
   const [density, setDensity] = useState<Density>("comfortable");
@@ -66,7 +105,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
 
   const parsed = useMemo(() => parseQuery(query), [query]);
   const chips = useMemo(() => termsOf(parsed), [parsed]);
@@ -75,6 +114,22 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // Below md the sidebar is forced to its icon rail. A 224px sidebar next
+  // to a 420px list needs 644px; on a 390px screen the list was rendering
+  // partly off-viewport, which is why nothing could be tapped or swiped
+  // there. Done in state rather than CSS because the sidebar decides what
+  // to render from `collapsed`, not just how wide to be.
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const apply = (narrow: boolean) => {
+      if (narrow) setSidebarCollapsed(true);
+    };
+    apply(query.matches);
+    const onChange = (event: MediaQueryListEvent) => apply(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   // Search is debounced so a typed query is one request, not one per keystroke.
   useEffect(() => {
@@ -142,26 +197,39 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
 
   const act = useCallback(
     async (action: string, ids: string[], optimistic?: () => void, revert?: () => void) => {
+      // Measure before the list reorders, so the rows below can slide into the
+      // gap instead of jumping.
+      measure();
       optimistic?.();
       try {
         const result = await api.act(action, ids);
-        setToast(`${result.changed} message${result.changed === 1 ? "" : "s"} ${action}`);
         await Promise.all([loadFolders(), loadThreads(activeMailboxId, debouncedQuery)]);
+
+        const inverse = INVERSE_ACTION[action];
+        toast.show(
+          `${result.changed} message${result.changed === 1 ? "" : "s"} ${PAST_TENSE[action] ?? action}`,
+          {
+            tone: "success",
+            // Undo is offered only where a real inverse call exists. An Undo
+            // button that cannot reverse anything is worse than no button.
+            onUndo: inverse
+              ? async () => {
+                  measure();
+                  await api.act(inverse, ids);
+                  await Promise.all([loadFolders(), loadThreads(activeMailboxId, debouncedQuery)]);
+                }
+              : undefined,
+          }
+        );
       } catch (err) {
         // The server is the truth. A failed mutation rolls the UI back rather
         // than leaving it showing something that did not happen.
         revert?.();
-        setToast(err instanceof ApiError ? err.message : "That action failed.");
+        toast.show(err instanceof ApiError ? err.message : "That action failed.", { tone: "error" });
       }
     },
-    [activeMailboxId, debouncedQuery, loadFolders, loadThreads]
+    [activeMailboxId, debouncedQuery, loadFolders, loadThreads, toast, measure]
   );
-
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(id);
-  }, [toast]);
 
   const visible = threads ?? [];
 
@@ -261,7 +329,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         activeMailboxId={activeMailboxId ?? ""}
         collapsed={sidebarCollapsed}
         onSelect={(id) => { setActiveMailboxId(id); setCursor(0); setOpenId(null); }}
-        onCompose={() => setToast("Compose is not built yet — see the roadmap in the README.")}
+        onCompose={() => toast.show("Compose is not built yet — see the roadmap in the README.", { tone: "info" })}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -353,38 +421,16 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           <div
             role="grid"
             aria-label={`${activeMailbox?.name ?? "Mail"} messages`}
             aria-rowcount={visible.length}
             aria-busy={listLoading}
-            className="flex w-[420px] shrink-0 flex-col overflow-y-auto border-r border-border bg-canvas"
+            className="flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-canvas md:w-[420px]"
           >
             {listLoading && visible.length === 0 ? (
-              <ul className="animate-pulse p-3" aria-hidden>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <li key={i} className="mb-3 flex gap-3">
-                    <span className="size-7 rounded-full bg-surface-sunken" />
-                    <span className="flex-1 space-y-2">
-                      <span className="block h-3 w-1/3 rounded bg-surface-sunken" />
-                      <span className="block h-3 w-4/5 rounded bg-surface-sunken" />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : error ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-                <Icon icon={icons.status.error} size="xl" className="text-danger" />
-                <p className="font-medium text-ink-secondary">{error}</p>
-                <button
-                  type="button"
-                  onClick={() => void loadThreads(activeMailboxId, debouncedQuery)}
-                  className="mt-1 rounded-lg border border-border px-3 py-1.5 text-sm text-ink hover:bg-surface-sunken"
-                >
-                  Retry
-                </button>
-              </div>
+              <MailListSkeleton density={density} rows={8} />
             ) : visible.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
                 <Icon icon={icons.mailbox.inbox} size="xl" className="text-ink-disabled" />
@@ -393,8 +439,28 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
               </div>
             ) : (
               visible.map((thread, index) => (
-                <MailListItem
+                <Swipeable
                   key={thread.id}
+                  // Archive is one Undo away, so it activates early. Trash is
+                  // destructive and demands roughly twice the travel.
+                  right={{
+                    id: "archive",
+                    label: "Archive",
+                    icon: icons.threadAction.archive,
+                    className: "bg-success-muted text-success-ink",
+                    onAction: () => void act("archive", [thread.latest.id]),
+                  }}
+                  left={{
+                    id: "read",
+                    label: thread.unreadCount > 0 ? "Mark read" : "Mark unread",
+                    icon: icons.messageState.read,
+                    className: "bg-primary-muted text-primary",
+                    onAction: () =>
+                      void act(thread.unreadCount > 0 ? "read" : "unread", [thread.latest.id]),
+                  }}
+                >
+                <div ref={register(thread.id)}>
+                <MailListItem
                   thread={thread}
                   density={density}
                   selected={selected.has(thread.id)}
@@ -409,11 +475,25 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
                     void act(thread.latest.keywords.includes("$flagged") ? "unstar" : "star", [thread.latest.id])
                   }
                 />
+                </div>
+                </Swipeable>
               ))
             )}
           </div>
 
-          <ReadingPane thread={openThread} />
+          {/* Below md the reading pane covers the list rather than sitting
+              beside it — there is not room for both, and a 420px pane squeezed
+              into 390px is how rows ended up off-screen. */}
+          <div
+            className={cn(
+              "min-w-0 flex-1",
+              openThread
+                ? "absolute inset-0 z-20 bg-canvas md:static md:z-auto"
+                : "hidden md:block"
+            )}
+          >
+            <ReadingPane thread={openThread} />
+          </div>
         </div>
 
         <footer className="flex items-center gap-4 border-t border-border bg-surface px-4 py-1.5 text-xs text-ink-muted">
@@ -440,13 +520,6 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
           </span>
         </footer>
       </div>
-
-      {toast && (
-        <div role="status" aria-live="polite"
-             className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-surface-raised px-4 py-2 text-sm text-ink shadow-lg ring-1 ring-border">
-          {toast}
-        </div>
-      )}
 
       {accountSection !== null && (
         <AccountCenter

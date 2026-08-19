@@ -143,11 +143,41 @@
   --spacing-row-spacious: 76px;
 
   /* ── Motion ────────────────────────────────────────────────────────── */
-  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-fast: 150ms;
-  --duration-base: 200ms;
-  --duration-slow: 300ms;
+  /* Durations live here because they generate `duration-*` utilities. */
+  --duration-instant: 80ms;
+  --duration-micro: 120ms;
+  --duration-fast: 160ms;
+  --duration-normal: 200ms;
+  --duration-smooth: 280ms;
+  --duration-slow: 400ms;
 }
+
+/*
+ * Motion tokens, declared outside `@theme`.
+ *
+ * Tailwind v4 only emits `@theme` variables that some utility actually
+ * references. These are consumed through `var(--ease-standard)` in inline
+ * styles and keyframes rather than through a class, so inside `@theme` they
+ * were tree-shaken away and resolved to the empty string at runtime.
+ *
+ * These MUST match `motion.ts`. CSS and JS holding different numbers for the
+ * same transition is how a menu opens at one speed and closes at another.
+ */
+:root {
+  --duration-instant: 80ms;
+  --duration-micro: 120ms;
+  --duration-fast: 160ms;
+  --duration-normal: 200ms;
+  --duration-smooth: 280ms;
+  --duration-slow: 400ms;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.2, 1.2, 0.3, 1);
+  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 
 /* ── Dark mode ───────────────────────────────────────────────────────── */
 
@@ -344,4 +374,39 @@ body {
   to {
     transform: translateY(0);
   }
+}
+
+/*
+ * Skeleton shimmer.
+ *
+ * A background sweep on the container, so a loading list is one animation
+ * rather than one per bar. `background-position` is composited, unlike the
+ * `left`-based sweep this replaces in most tutorials.
+ *
+ * Not wrapped in a reduced-motion query: the reduced-motion block above
+ * already flattens every animation to 0.01ms, and the Shimmer component drops
+ * the class entirely when the in-app setting is on.
+ */
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/*
+ * Star pulse. One restrained scale, no particles.
+ * `transform` only, so it never triggers layout.
+ */
+@keyframes starPulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+/*
+ * Row leaving the list after a swipe or an archive. Paired with the FLIP
+ * animation that closes the gap behind it.
+ */
+@keyframes rowOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-24px); }
 }
