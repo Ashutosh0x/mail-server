@@ -1,0 +1,12 @@
+{
+  "name": "@mailserver/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate.mjs",
+    "migrate:plan": "node migrate.mjs --dry-run",
+    "test": "vitest run"
+  },
+  "devDependencies": { "vitest": "^4.0.0" }
+}

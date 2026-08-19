@@ -1,0 +1,66 @@
+# Stalwart Mail Server Configuration
+# PostgreSQL metadata backend & Local storage
+
+[server]
+hostname = "mail.mailforge.local"
+
+[server.tls]
+enable = true
+certificate = "default"
+
+[store.db]
+type = "postgresql"
+url = "postgresql://mailforge:mailforge_dev@postgres:5432/mailforge"
+
+[store.blob]
+type = "fs"
+path = "/opt/stalwart-mail/data/blobs"
+
+[store.directory]
+type = "sql"
+backend = "db"
+
+[jmap]
+enable = true
+bind = ["[::]:8080"]
+
+[imap]
+enable = true
+bind = ["[::]:993"]
+tls = "implicit"
+
+[smtp]
+enable = true
+bind = ["[::]:25", "[::]:465", "[::]:587"]
+tls = { "465" = "implicit", "587" = "starttls", "25" = "starttls" }
+
+[sieve]
+enable = true
+bind = ["[::]:4190"]
+
+[spam-filter]
+enable = true
+milter = "inet:rspamd:11334"
+
+[auth]
+mechanisms = ["plain", "login", "xoauth2"]
+
+[dkim]
+sign = true
+
+[spf]
+verify = true
+
+[dmarc]
+evaluate = true
+
+[arc]
+sign = true
+
+[logging]
+level = "info"
+format = "json"
+
+[metrics]
+enable = true
+bind = ["[::]:9090"]

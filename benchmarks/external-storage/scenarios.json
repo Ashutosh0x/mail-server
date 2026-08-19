@@ -1,0 +1,150 @@
+{
+  "$comment": "Scenario definitions for external storage connectors. NONE HAVE BEEN EXECUTED. See ADR-0006 before citing any number derived from this file.",
+  "status": "NOT_MEASURED",
+  "methodology": "docs/adr/0006-benchmark-methodology.md",
+  "scenarios": [
+    {
+      "id": "upload-1mb",
+      "operation": "upload",
+      "requiresCapability": "write",
+      "fileSizeBytes": 1048576,
+      "fileCount": 1,
+      "concurrency": 1,
+      "iterations": 50,
+      "warmup": 5,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "upload-100mb",
+      "operation": "upload",
+      "requiresCapability": "write",
+      "fileSizeBytes": 104857600,
+      "fileCount": 1,
+      "concurrency": 1,
+      "iterations": 20,
+      "warmup": 2,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "upload-1gb",
+      "operation": "upload",
+      "requiresCapability": "multipart_upload",
+      "fileSizeBytes": 1073741824,
+      "fileCount": 1,
+      "concurrency": 1,
+      "iterations": 5,
+      "warmup": 1,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "download-1gb",
+      "operation": "download",
+      "requiresCapability": "read",
+      "fileSizeBytes": 1073741824,
+      "fileCount": 1,
+      "concurrency": 1,
+      "iterations": 5,
+      "warmup": 1,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "list-10k",
+      "operation": "list",
+      "requiresCapability": "folders",
+      "fileCount": 10000,
+      "concurrency": 1,
+      "iterations": 20,
+      "warmup": 2,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "list-100k",
+      "operation": "list",
+      "requiresCapability": "folders",
+      "fileCount": 100000,
+      "concurrency": 1,
+      "iterations": 10,
+      "warmup": 1,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "search-10k",
+      "operation": "search",
+      "requiresCapability": "search",
+      "fileCount": 10000,
+      "concurrency": 1,
+      "iterations": 50,
+      "warmup": 5,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "search-100k",
+      "operation": "search",
+      "requiresCapability": "search",
+      "fileCount": 100000,
+      "concurrency": 1,
+      "iterations": 20,
+      "warmup": 2,
+      "$comment": "The blueprint asserted sub-8ms here as a measured result. It was fabricated. No target is set until a baseline exists.",
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "concurrent-upload-32",
+      "operation": "upload",
+      "requiresCapability": "write",
+      "fileSizeBytes": 10485760,
+      "fileCount": 32,
+      "concurrency": 32,
+      "iterations": 10,
+      "warmup": 1,
+      "$comment": "The blueprint asserted 1,000 sustained parallel streams. Unmeasured and untested. Concurrency here starts at a level a single host can actually drive, and rises only once a baseline exists.",
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "concurrent-download-32",
+      "operation": "download",
+      "requiresCapability": "read",
+      "fileSizeBytes": 10485760,
+      "fileCount": 32,
+      "concurrency": 32,
+      "iterations": 10,
+      "warmup": 1,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "metadata-sync-incremental",
+      "operation": "sync",
+      "requiresCapability": "change_tracking",
+      "fileCount": 100000,
+      "changeCount": 1000,
+      "concurrency": 1,
+      "iterations": 10,
+      "warmup": 1,
+      "target": null,
+      "status": "NOT_MEASURED"
+    },
+    {
+      "id": "server-side-copy-1gb",
+      "operation": "copy",
+      "requiresCapability": "server_side_copy",
+      "fileSizeBytes": 1073741824,
+      "fileCount": 1,
+      "concurrency": 1,
+      "iterations": 5,
+      "warmup": 1,
+      "$comment": "The blueprint asserted copy_file_range under 5ms for 1GB as a measured result. It was fabricated. Such a figure would indicate a copy-on-write clone, which is a property of the backing filesystem's reflink support, not of this code. Any result here must record the filesystem.",
+      "target": null,
+      "status": "NOT_MEASURED"
+    }
+  ]
+}

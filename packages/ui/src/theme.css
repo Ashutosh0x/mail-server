@@ -1,0 +1,316 @@
+/*
+ * Mail Server design tokens.
+ *
+ * Tailwind v4 `@theme`: every custom property declared here becomes a utility
+ * (`--color-surface` → `bg-surface`, `text-surface`, `border-surface`), so the
+ * token list and the utility list cannot drift apart.
+ *
+ * OKLCH throughout. The practical reason, not the fashionable one: lightness in
+ * OKLCH is perceptual, so `oklch(58% …)` reads as the same brightness at every
+ * hue. The twelve label colours are generated at fixed L/C across twelve hues
+ * for exactly this — in HSL the yellow would wash out and the blue would go
+ * muddy at identical numbers, and each would need hand-correcting.
+ *
+ * Dark mode redefines tokens under BOTH `@media (prefers-color-scheme: dark)`
+ * (guarded so an explicit light choice still wins) and `[data-theme="dark"]`
+ * (so the toggle wins in both directions). A token defined only inside a media
+ * query has no value when the user has chosen the other theme explicitly.
+ */
+
+@import "tailwindcss";
+
+@theme {
+  /* ── Canvas & surfaces ─────────────────────────────────────────────── */
+  --color-canvas: oklch(99% 0 0);
+  --color-surface: oklch(97% 0.002 260);
+  --color-surface-raised: oklch(100% 0 0);
+  --color-surface-sunken: oklch(95% 0.003 260);
+  --color-surface-overlay: oklch(100% 0 0 / 0.92);
+
+  /* ── Borders ───────────────────────────────────────────────────────── */
+  --color-border: oklch(90% 0.005 260);
+  --color-border-muted: oklch(93% 0.003 260);
+  --color-border-strong: oklch(82% 0.008 260);
+
+  /* ── Text ──────────────────────────────────────────────────────────── */
+  --color-ink: oklch(20% 0.01 260);
+  --color-ink-secondary: oklch(40% 0.01 260);
+  --color-ink-muted: oklch(55% 0.01 260);
+  --color-ink-disabled: oklch(70% 0.005 260);
+  --color-ink-inverse: oklch(98% 0 0);
+
+  /* ── Brand ─────────────────────────────────────────────────────────── */
+  --color-primary: oklch(58% 0.22 260);
+  --color-primary-hover: oklch(52% 0.24 260);
+  --color-primary-active: oklch(48% 0.25 260);
+  --color-primary-muted: oklch(92% 0.04 260);
+  --color-primary-ink: oklch(100% 0 0);
+
+  /* ── Semantic ──────────────────────────────────────────────────────── */
+  --color-success: oklch(68% 0.18 145);
+  --color-success-muted: oklch(94% 0.04 145);
+  --color-success-ink: oklch(35% 0.12 145);
+
+  --color-warning: oklch(75% 0.16 70);
+  --color-warning-muted: oklch(95% 0.04 70);
+  --color-warning-ink: oklch(40% 0.12 70);
+
+  --color-danger: oklch(60% 0.22 25);
+  --color-danger-muted: oklch(95% 0.04 25);
+  --color-danger-ink: oklch(38% 0.15 25);
+
+  --color-info: oklch(65% 0.18 230);
+  --color-info-muted: oklch(94% 0.03 230);
+  --color-info-ink: oklch(38% 0.12 230);
+
+  /* ── Mail-specific ─────────────────────────────────────────────────── */
+  --color-unread: oklch(20% 0.01 260);
+  --color-read: oklch(45% 0.01 260);
+  --color-starred: oklch(75% 0.18 85);
+  --color-attachment: oklch(60% 0.12 260);
+
+  /* ── Label colours ─────────────────────────────────────────────────
+     Twelve hues at one lightness/chroma pair per role. Generated, not
+     hand-picked, so adding a thirteenth is a hue value rather than a
+     design session. */
+  --color-label-red: oklch(94% 0.04 25);
+  --color-label-red-ink: oklch(50% 0.18 25);
+  --color-label-orange: oklch(94% 0.04 55);
+  --color-label-orange-ink: oklch(50% 0.15 55);
+  --color-label-yellow: oklch(95% 0.04 85);
+  --color-label-yellow-ink: oklch(45% 0.12 85);
+  --color-label-green: oklch(94% 0.04 145);
+  --color-label-green-ink: oklch(42% 0.14 145);
+  --color-label-teal: oklch(93% 0.04 185);
+  --color-label-teal-ink: oklch(40% 0.12 185);
+  --color-label-blue: oklch(93% 0.04 250);
+  --color-label-blue-ink: oklch(45% 0.16 250);
+  --color-label-indigo: oklch(92% 0.04 280);
+  --color-label-indigo-ink: oklch(48% 0.18 280);
+  --color-label-purple: oklch(93% 0.04 310);
+  --color-label-purple-ink: oklch(48% 0.16 310);
+  --color-label-pink: oklch(94% 0.04 340);
+  --color-label-pink-ink: oklch(50% 0.16 340);
+  --color-label-gray: oklch(94% 0.002 260);
+  --color-label-gray-ink: oklch(40% 0.01 260);
+  --color-label-brown: oklch(93% 0.03 60);
+  --color-label-brown-ink: oklch(42% 0.1 60);
+  --color-label-cyan: oklch(93% 0.04 200);
+  --color-label-cyan-ink: oklch(40% 0.12 200);
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --font-sans: "Inter", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code",
+    Consolas, "Liberation Mono", monospace;
+
+  --text-xs: 11px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-md: 15px;
+  --text-md--line-height: 24px;
+  --text-lg: 17px;
+  --text-lg--line-height: 26px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
+
+  /* ── Radii ─────────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+
+  /* ── Shadows ───────────────────────────────────────────────────────── */
+  --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.1), 0 1px 2px oklch(0% 0 0 / 0.06);
+  --shadow-md: 0 4px 6px oklch(0% 0 0 / 0.1), 0 2px 4px oklch(0% 0 0 / 0.06);
+  --shadow-lg: 0 10px 15px oklch(0% 0 0 / 0.1), 0 4px 6px oklch(0% 0 0 / 0.05);
+  --shadow-xl: 0 20px 25px oklch(0% 0 0 / 0.1), 0 8px 10px oklch(0% 0 0 / 0.04);
+
+  /* ── Mail list density ─────────────────────────────────────────────
+     Row heights are tokens because the virtualiser needs the number in JS and
+     the row needs it in CSS. One source, read by both. */
+  --spacing-row-compact: 36px;
+  --spacing-row-comfortable: 56px;
+  --spacing-row-spacious: 76px;
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+}
+
+/* ── Dark mode ───────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: oklch(12% 0.005 260);
+    --color-surface: oklch(16% 0.006 260);
+    --color-surface-raised: oklch(20% 0.008 260);
+    --color-surface-sunken: oklch(14% 0.005 260);
+    --color-surface-overlay: oklch(18% 0.007 260 / 0.94);
+
+    --color-border: oklch(27% 0.008 260);
+    --color-border-muted: oklch(22% 0.006 260);
+    --color-border-strong: oklch(36% 0.01 260);
+
+    --color-ink: oklch(98% 0 0);
+    --color-ink-secondary: oklch(75% 0.005 260);
+    --color-ink-muted: oklch(55% 0.005 260);
+    --color-ink-disabled: oklch(40% 0.005 260);
+    --color-ink-inverse: oklch(20% 0.01 260);
+
+    --color-primary: oklch(68% 0.19 260);
+    --color-primary-hover: oklch(74% 0.18 260);
+    --color-primary-active: oklch(78% 0.17 260);
+    --color-primary-muted: oklch(26% 0.06 260);
+
+    --color-success-muted: oklch(22% 0.05 145);
+    --color-success-ink: oklch(78% 0.12 145);
+    --color-warning-muted: oklch(24% 0.05 70);
+    --color-warning-ink: oklch(82% 0.1 70);
+    --color-danger-muted: oklch(24% 0.06 25);
+    --color-danger-ink: oklch(80% 0.12 25);
+    --color-info-muted: oklch(22% 0.05 230);
+    --color-info-ink: oklch(78% 0.12 230);
+
+    --color-unread: oklch(98% 0 0);
+    --color-read: oklch(65% 0.005 260);
+
+    --color-label-red: oklch(25% 0.06 25);
+    --color-label-red-ink: oklch(80% 0.12 25);
+    --color-label-orange: oklch(25% 0.06 55);
+    --color-label-orange-ink: oklch(80% 0.1 55);
+    --color-label-yellow: oklch(25% 0.05 85);
+    --color-label-yellow-ink: oklch(82% 0.1 85);
+    --color-label-green: oklch(22% 0.05 145);
+    --color-label-green-ink: oklch(78% 0.12 145);
+    --color-label-teal: oklch(22% 0.05 185);
+    --color-label-teal-ink: oklch(78% 0.1 185);
+    --color-label-blue: oklch(22% 0.05 250);
+    --color-label-blue-ink: oklch(78% 0.12 250);
+    --color-label-indigo: oklch(22% 0.06 280);
+    --color-label-indigo-ink: oklch(78% 0.12 280);
+    --color-label-purple: oklch(22% 0.05 310);
+    --color-label-purple-ink: oklch(78% 0.1 310);
+    --color-label-pink: oklch(24% 0.05 340);
+    --color-label-pink-ink: oklch(80% 0.1 340);
+    --color-label-gray: oklch(24% 0.005 260);
+    --color-label-gray-ink: oklch(75% 0.005 260);
+    --color-label-brown: oklch(22% 0.04 60);
+    --color-label-brown-ink: oklch(75% 0.08 60);
+    --color-label-cyan: oklch(22% 0.05 200);
+    --color-label-cyan-ink: oklch(78% 0.1 200);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-canvas: oklch(12% 0.005 260);
+  --color-surface: oklch(16% 0.006 260);
+  --color-surface-raised: oklch(20% 0.008 260);
+  --color-surface-sunken: oklch(14% 0.005 260);
+  --color-surface-overlay: oklch(18% 0.007 260 / 0.94);
+
+  --color-border: oklch(27% 0.008 260);
+  --color-border-muted: oklch(22% 0.006 260);
+  --color-border-strong: oklch(36% 0.01 260);
+
+  --color-ink: oklch(98% 0 0);
+  --color-ink-secondary: oklch(75% 0.005 260);
+  --color-ink-muted: oklch(55% 0.005 260);
+  --color-ink-disabled: oklch(40% 0.005 260);
+  --color-ink-inverse: oklch(20% 0.01 260);
+
+  --color-primary: oklch(68% 0.19 260);
+  --color-primary-hover: oklch(74% 0.18 260);
+  --color-primary-active: oklch(78% 0.17 260);
+  --color-primary-muted: oklch(26% 0.06 260);
+
+  --color-success-muted: oklch(22% 0.05 145);
+  --color-success-ink: oklch(78% 0.12 145);
+  --color-warning-muted: oklch(24% 0.05 70);
+  --color-warning-ink: oklch(82% 0.1 70);
+  --color-danger-muted: oklch(24% 0.06 25);
+  --color-danger-ink: oklch(80% 0.12 25);
+  --color-info-muted: oklch(22% 0.05 230);
+  --color-info-ink: oklch(78% 0.12 230);
+
+  --color-unread: oklch(98% 0 0);
+  --color-read: oklch(65% 0.005 260);
+
+  --color-label-red: oklch(25% 0.06 25);
+  --color-label-red-ink: oklch(80% 0.12 25);
+  --color-label-orange: oklch(25% 0.06 55);
+  --color-label-orange-ink: oklch(80% 0.1 55);
+  --color-label-yellow: oklch(25% 0.05 85);
+  --color-label-yellow-ink: oklch(82% 0.1 85);
+  --color-label-green: oklch(22% 0.05 145);
+  --color-label-green-ink: oklch(78% 0.12 145);
+  --color-label-teal: oklch(22% 0.05 185);
+  --color-label-teal-ink: oklch(78% 0.1 185);
+  --color-label-blue: oklch(22% 0.05 250);
+  --color-label-blue-ink: oklch(78% 0.12 250);
+  --color-label-indigo: oklch(22% 0.06 280);
+  --color-label-indigo-ink: oklch(78% 0.12 280);
+  --color-label-purple: oklch(22% 0.05 310);
+  --color-label-purple-ink: oklch(78% 0.1 310);
+  --color-label-pink: oklch(24% 0.05 340);
+  --color-label-pink-ink: oklch(80% 0.1 340);
+  --color-label-gray: oklch(24% 0.005 260);
+  --color-label-gray-ink: oklch(75% 0.005 260);
+  --color-label-brown: oklch(22% 0.04 60);
+  --color-label-brown-ink: oklch(75% 0.08 60);
+  --color-label-cyan: oklch(22% 0.05 200);
+  --color-label-cyan-ink: oklch(78% 0.1 200);
+}
+
+/* ── Base ────────────────────────────────────────────────────────────── */
+
+html,
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus ring, once, for everything. WCAG 2.2 SC 2.4.11 wants the indicator not
+   obscured — the offset keeps it clear of the element's own border. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Section 21: honour the OS setting rather than shipping our own toggle for it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@utility sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}

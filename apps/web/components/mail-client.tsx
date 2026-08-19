@@ -1,0 +1,448 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Label, Mailbox, Thread } from "@mailserver/types";
+import { parseQuery, removeTermAt, termsOf } from "@mailserver/types";
+import { Icon, cn, icons } from "@mailserver/ui";
+import { api, ApiError, type SessionInfo } from "@/lib/api";
+import { MailListItem, ROW_HEIGHT, type Density } from "./mail-list-item";
+import { ReadingPane } from "./reading-pane";
+import { Sidebar } from "./sidebar";
+
+const DENSITIES = [
+  { id: "compact" as const, label: "Compact", icon: icons.settings.densityCompact },
+  { id: "comfortable" as const, label: "Comfortable", icon: icons.settings.densityComfortable },
+  { id: "spacious" as const, label: "Spacious", icon: icons.settings.densitySpacious },
+];
+
+/** Empty-state wording per mailbox role. Says what is true, offers no fiction. */
+function emptyStateFor(role: Mailbox["role"], searching: boolean) {
+  if (searching) {
+    return { title: "No messages match", body: "Try removing a filter or searching for something else." };
+  }
+  switch (role) {
+    case "inbox":
+      return { title: "Your inbox is empty", body: "New messages will appear here." };
+    case "sent":
+      return { title: "No sent messages yet", body: "Messages you send will appear here." };
+    case "drafts":
+      return { title: "No drafts", body: "Drafts are saved here as you write." };
+    case "archive":
+      return { title: "Nothing archived", body: "Archived messages are kept out of your inbox." };
+    case "junk":
+      return { title: "No spam", body: "Messages we flag as spam appear here." };
+    case "trash":
+      return { title: "Trash is empty", body: "Deleted messages are kept here before removal." };
+    default:
+      return { title: "Nothing here yet", body: "This folder has no messages." };
+  }
+}
+
+export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: () => void }) {
+  const [mailboxes, setMailboxes] = useState<Mailbox[] | null>(null);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [threads, setThreads] = useState<Thread[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+  const [activeMailboxId, setActiveMailboxId] = useState<string | null>(null);
+  const [density, setDensity] = useState<Density>("comfortable");
+  const [cursor, setCursor] = useState(0);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [openThread, setOpenThread] = useState<Thread | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  const [loading, setLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const parsed = useMemo(() => parseQuery(query), [query]);
+  const chips = useMemo(() => termsOf(parsed), [parsed]);
+  const activeMailbox = mailboxes?.find((m) => m.id === activeMailboxId) ?? null;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  // Search is debounced so a typed query is one request, not one per keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const loadFolders = useCallback(async () => {
+    const [boxes, labelList] = await Promise.all([api.mailboxes(), api.labels()]);
+    setMailboxes(boxes.mailboxes);
+    setLabels(labelList.labels);
+    setActiveMailboxId((current) => current ?? boxes.mailboxes.find((m) => m.role === "inbox")?.id ?? boxes.mailboxes[0]?.id ?? null);
+  }, []);
+
+  // A superseded request must not overwrite a newer one's results.
+  const requestSeq = useRef(0);
+
+  const loadThreads = useCallback(
+    async (mailboxId: string | null, search: string) => {
+      if (!mailboxId) return;
+      const seq = ++requestSeq.current;
+      setListLoading(true);
+      try {
+        const page = await api.threads({ mailboxId, q: search || undefined });
+        if (seq !== requestSeq.current) return;
+        setThreads(page.items);
+        setTotal(page.total);
+        setNextCursor(page.nextCursor);
+        setError(null);
+      } catch (err) {
+        if (seq !== requestSeq.current) return;
+        setThreads(null);
+        setError(err instanceof ApiError ? err.message : "Could not load messages.");
+      } finally {
+        if (seq === requestSeq.current) setListLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadFolders();
+        if (!cancelled) setError(null);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : "Could not load your mailboxes.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFolders]);
+
+  useEffect(() => {
+    void loadThreads(activeMailboxId, debouncedQuery);
+  }, [activeMailboxId, debouncedQuery, loadThreads]);
+
+  useEffect(() => {
+    setOpenThread(threads?.find((t) => t.id === openId) ?? null);
+  }, [threads, openId]);
+
+  const act = useCallback(
+    async (action: string, ids: string[], optimistic?: () => void, revert?: () => void) => {
+      optimistic?.();
+      try {
+        const result = await api.act(action, ids);
+        setToast(`${result.changed} message${result.changed === 1 ? "" : "s"} ${action}`);
+        await Promise.all([loadFolders(), loadThreads(activeMailboxId, debouncedQuery)]);
+      } catch (err) {
+        // The server is the truth. A failed mutation rolls the UI back rather
+        // than leaving it showing something that did not happen.
+        revert?.();
+        setToast(err instanceof ApiError ? err.message : "That action failed.");
+      }
+    },
+    [activeMailboxId, debouncedQuery, loadFolders, loadThreads]
+  );
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const visible = threads ?? [];
+
+  const toggleSet = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  };
+
+  // Keyboard map (Section 33). Ignored while a field has focus.
+  useEffect(() => {
+    let pendingG = false;
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable === true;
+      if (typing) {
+        if (event.key === "Escape") target?.blur();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (pendingG) {
+        pendingG = false;
+        const roles: Record<string, string> = { i: "inbox", s: "sent", d: "drafts", a: "archive", t: "trash", p: "junk" };
+        const box = mailboxes?.find((m) => m.role === roles[event.key.toLowerCase()]);
+        if (box) {
+          setActiveMailboxId(box.id);
+          setCursor(0);
+          setOpenId(null);
+          event.preventDefault();
+        }
+        return;
+      }
+
+      const currentId = visible[cursor]?.latest.id;
+      switch (event.key) {
+        case "j": setCursor((c) => Math.min(c + 1, Math.max(visible.length - 1, 0))); event.preventDefault(); break;
+        case "k": setCursor((c) => Math.max(c - 1, 0)); event.preventDefault(); break;
+        case "Enter":
+        case "o": setOpenId(visible[cursor]?.id ?? null); event.preventDefault(); break;
+        case "Escape": setOpenId(null); break;
+        case "x": if (visible[cursor]) setSelected((s) => toggleSet(s, visible[cursor]!.id)); event.preventDefault(); break;
+        case "s":
+        case "*": if (currentId) void act(visible[cursor]!.latest.keywords.includes("$flagged") ? "unstar" : "star", [currentId]); event.preventDefault(); break;
+        case "e": if (currentId) void act("archive", [currentId]); event.preventDefault(); break;
+        case "#": if (currentId) void act("trash", [currentId]); event.preventDefault(); break;
+        case "u": if (currentId) void act(visible[cursor]!.unreadCount > 0 ? "read" : "unread", [currentId]); event.preventDefault(); break;
+        case "g": pendingG = true; break;
+        case "/": document.getElementById("mail-search")?.focus(); event.preventDefault(); break;
+        case ",": setSidebarCollapsed((v) => !v); event.preventDefault(); break;
+        default: break;
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [visible, cursor, mailboxes, act]);
+
+  if (loading) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-canvas">
+        <div className="flex items-center gap-2 text-ink-muted">
+          <Icon icon={icons.status.loading} size="md" className="animate-spin" />
+          Loading your mailbox…
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !mailboxes) {
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-canvas p-8 text-center">
+        <Icon icon={icons.status.error} size="hero" className="text-danger" />
+        <h1 className="text-lg font-semibold text-ink">Could not load your mailbox</h1>
+        <p className="max-w-md text-sm text-ink-secondary">{error}</p>
+        <button
+          type="button"
+          onClick={() => { setLoading(true); void loadFolders().finally(() => setLoading(false)); }}
+          className="mt-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-ink hover:bg-primary-hover"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  const empty = emptyStateFor(activeMailbox?.role ?? null, debouncedQuery.length > 0);
+
+  return (
+    <div className="flex h-dvh overflow-hidden bg-canvas text-ink">
+      <Sidebar
+        mailboxes={mailboxes ?? []}
+        labels={labels}
+        activeMailboxId={activeMailboxId ?? ""}
+        collapsed={sidebarCollapsed}
+        onSelect={(id) => { setActiveMailboxId(id); setCursor(0); setOpenId(null); }}
+        onCompose={() => setToast("Compose is not built yet — see the roadmap in the README.")}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            className="rounded-md p-1.5 text-ink-secondary hover:bg-surface-sunken hover:text-ink"
+          >
+            <Icon icon={sidebarCollapsed ? icons.chrome.expandSidebar : icons.chrome.collapseSidebar} size="md"
+                  label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} />
+          </button>
+
+          <div className="relative flex max-w-xl flex-1 items-center">
+            <Icon icon={icons.search.search} size="sm" className="absolute left-3 text-ink-muted" />
+            <input
+              id="mail-search"
+              type="search"
+              role="searchbox"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search mail —  from:  has:attachment  is:unread  newer:7d"
+              className="w-full rounded-lg border border-border bg-canvas py-1.5 pl-9 pr-3 text-sm text-ink placeholder:text-ink-muted focus:border-primary"
+            />
+            {listLoading && (
+              <Icon icon={icons.status.loading} size="sm" className="absolute right-3 animate-spin text-ink-muted" />
+            )}
+          </div>
+
+          <div className="ml-auto flex items-center gap-1">
+            {DENSITIES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setDensity(option.id)}
+                aria-pressed={density === option.id}
+                title={`${option.label} density`}
+                className={cn("rounded-md p-1.5", density === option.id ? "bg-primary-muted text-primary" : "text-ink-secondary hover:bg-surface-sunken hover:text-ink")}
+              >
+                <Icon icon={option.icon} size="md" label={`${option.label} density`} />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+              className="rounded-md p-1.5 text-ink-secondary hover:bg-surface-sunken hover:text-ink"
+            >
+              <Icon icon={theme === "light" ? icons.settings.dark : icons.settings.light} size="md"
+                    label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} />
+            </button>
+            <button
+              type="button"
+              onClick={onSignOut}
+              title={`Signed in as ${user.email}`}
+              className="ml-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-ink-secondary hover:bg-surface-sunken hover:text-ink"
+            >
+              <Icon icon={icons.chrome.avatar} size="md" />
+              <span className="max-w-[14ch] truncate">{user.displayName}</span>
+            </button>
+          </div>
+        </header>
+
+        {(chips.length > 0 || parsed.unknownFields.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-surface px-4 py-2">
+            {chips.map((chip) => (
+              <button
+                key={`${chip.field}-${chip.start}`}
+                type="button"
+                onClick={() => setQuery((q) => removeTermAt(q, chip.start, chip.end))}
+                className="inline-flex items-center gap-1 rounded-full bg-primary-muted px-2.5 py-1 text-xs font-medium text-primary"
+              >
+                {chip.negated && "-"}{chip.field}: {chip.value}
+                <Icon icon={icons.chrome.close} size="xs" label={`Remove ${chip.field} filter`} />
+              </button>
+            ))}
+            {parsed.unknownFields.map((unknown) => (
+              <span
+                key={`${unknown.name}-${unknown.start}`}
+                className="inline-flex items-center gap-1 rounded-full bg-warning-muted px-2.5 py-1 text-xs font-medium text-warning-ink"
+                title={`"${unknown.name}:" is not a search operator — searching for it as text`}
+              >
+                <Icon icon={icons.chrome.warning} size="xs" />
+                {unknown.name}: not an operator
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex min-h-0 flex-1">
+          <div
+            role="grid"
+            aria-label={`${activeMailbox?.name ?? "Mail"} messages`}
+            aria-rowcount={visible.length}
+            aria-busy={listLoading}
+            className="flex w-[420px] shrink-0 flex-col overflow-y-auto border-r border-border bg-canvas"
+          >
+            {listLoading && visible.length === 0 ? (
+              <ul className="animate-pulse p-3" aria-hidden>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <li key={i} className="mb-3 flex gap-3">
+                    <span className="size-7 rounded-full bg-surface-sunken" />
+                    <span className="flex-1 space-y-2">
+                      <span className="block h-3 w-1/3 rounded bg-surface-sunken" />
+                      <span className="block h-3 w-4/5 rounded bg-surface-sunken" />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : error ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <Icon icon={icons.status.error} size="xl" className="text-danger" />
+                <p className="font-medium text-ink-secondary">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadThreads(activeMailboxId, debouncedQuery)}
+                  className="mt-1 rounded-lg border border-border px-3 py-1.5 text-sm text-ink hover:bg-surface-sunken"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : visible.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <Icon icon={icons.mailbox.inbox} size="xl" className="text-ink-disabled" />
+                <p className="font-medium text-ink-secondary">{empty.title}</p>
+                <p className="text-sm text-ink-muted">{empty.body}</p>
+              </div>
+            ) : (
+              visible.map((thread, index) => (
+                <MailListItem
+                  key={thread.id}
+                  thread={thread}
+                  density={density}
+                  selected={selected.has(thread.id)}
+                  active={index === cursor}
+                  onOpen={() => {
+                    setCursor(index);
+                    setOpenId(thread.id);
+                    if (thread.unreadCount > 0) void act("read", [thread.latest.id]);
+                  }}
+                  onToggleSelect={() => setSelected((s) => toggleSet(s, thread.id))}
+                  onToggleStar={() =>
+                    void act(thread.latest.keywords.includes("$flagged") ? "unstar" : "star", [thread.latest.id])
+                  }
+                />
+              ))
+            )}
+          </div>
+
+          <ReadingPane thread={openThread} />
+        </div>
+
+        <footer className="flex items-center gap-4 border-t border-border bg-surface px-4 py-1.5 text-xs text-ink-muted">
+          <span>
+            {total} conversation{total === 1 ? "" : "s"}
+            {selected.size > 0 && ` · ${selected.size} selected`}
+            {nextCursor && " · more available"}
+          </span>
+          {selected.size > 0 && (
+            <span className="flex items-center gap-1">
+              <button type="button" onClick={() => void act("archive", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}
+                      className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink">Archive</button>
+              <button type="button" onClick={() => void act("trash", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}
+                      className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink">Delete</button>
+              <button type="button" onClick={() => void act("read", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}
+                      className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink">Mark read</button>
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-3">
+            <span><Key>J</Key><Key>K</Key> move</span>
+            <span><Key>E</Key> archive</span>
+            <span><Key>S</Key> star</span>
+            <span><Key>/</Key> search</span>
+          </span>
+        </footer>
+      </div>
+
+      {toast && (
+        <div role="status" aria-live="polite"
+             className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-surface-raised px-4 py-2 text-sm text-ink shadow-lg ring-1 ring-border">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Key({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="mr-0.5 rounded border border-border bg-canvas px-1 py-0.5 font-mono text-[10px] text-ink-secondary">
+      {children}
+    </kbd>
+  );
+}
+
+export { ROW_HEIGHT };
