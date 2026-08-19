@@ -30,6 +30,9 @@
 
 ---
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/00d9470a-9087-41c0-baaa-b9f6a3c7f82a" />
+
+
 [Stalwart](https://stalw.art) is the mail engine — SMTP, IMAP4rev2, JMAP,
 CalDAV, CardDAV, WebDAV and Sieve in one binary. Mail Server is the platform
 around it: the webmail client, the admin surface, the multi-tenant control plane
