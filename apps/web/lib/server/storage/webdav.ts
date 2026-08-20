@@ -1,5 +1,14 @@
 import "server-only";
+import { Readable } from "node:stream";
 import { checkEndpoint, redact } from "./endpoint-guard";
+import type {
+  ConnectionProbe,
+  ConnectorCapabilities,
+  StorageConnector,
+  StorageEntry,
+  StorageUsageReport,
+} from "./connector";
+import { safeRelativePath } from "./connector";
 
 /**
  * WebDAV connector.
@@ -34,32 +43,8 @@ export interface WebDavConfig {
   basePath?: string;
 }
 
-export interface WebDavEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size: number | null;
-  modifiedAt: string | null;
-  contentType: string | null;
-}
-
-export type ConnectionState =
-  | "connected"
-  | "authentication_required"
-  | "unreachable"
-  | "permission_denied"
-  | "read_only"
-  | "error";
-
-export interface ConnectionTest {
-  state: ConnectionState;
-  detail: string;
-  /** Null when the server does not implement RFC 4331 quota properties. */
-  capacity: { totalBytes: number | null; usedBytes: number | null; freeBytes: number | null };
-  /** Round-trip of the probe request. Useful, and real. */
-  latencyMs: number | null;
-  writable: boolean | null;
-}
+/** Entries and probe results use the shared connector contract. */
+export type WebDavEntry = StorageEntry;
 
 const TIMEOUT_MS = 20_000;
 
@@ -77,8 +62,14 @@ function tagText(xml: string, local: string): string | null {
   return match ? match[1]!.trim() : null;
 }
 
-export class WebDavConnector {
-  readonly name = "webdav";
+export class WebDavConnector implements StorageConnector {
+  readonly kind = "webdav";
+
+  capabilities(): ConnectorCapabilities {
+    // WebDAV defines all of these; whether the SERVER permits them is
+    // discovered per request, and surfaces as an error from that request.
+    return { read: true, write: true, move: true, copy: true, mkdir: true, usage: true };
+  }
 
   constructor(private readonly config: WebDavConfig) {}
 
@@ -124,7 +115,7 @@ export class WebDavConnector {
   private async request(
     method: string,
     path: string,
-    init: { body?: BodyInit; headers?: Record<string, string> } = {}
+    init: { body?: BodyInit | Readable; headers?: Record<string, string> } = {}
   ): Promise<Response> {
     const resolved = this.resolve(path);
     if (resolved === null) {
@@ -146,10 +137,19 @@ export class WebDavConnector {
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
+      // A Node stream is converted rather than buffered, so an upload of any
+      // size stays a stream all the way to the socket.
+      const body =
+        init.body instanceof Readable
+          ? (Readable.toWeb(init.body) as unknown as BodyInit)
+          : init.body;
+
       return await fetch(target.toString(), {
         method,
         headers: { Authorization: this.authHeader(), ...(init.headers ?? {}) },
-        body: init.body,
+        body,
+        // Required by undici whenever the body is a stream.
+        ...(init.body instanceof Readable ? { duplex: "half" } : {}),
         signal: controller.signal,
         redirect: "manual",
       });
@@ -162,7 +162,7 @@ export class WebDavConnector {
   }
 
   /** Probe the server for real. Never reports "connected" without a response. */
-  async testConnection(): Promise<ConnectionTest> {
+  async testConnection(): Promise<ConnectionProbe> {
     const started = Date.now();
     let response: Response;
 
@@ -177,7 +177,7 @@ export class WebDavConnector {
       return {
         state: "unreachable",
         detail: redact(cause instanceof Error ? cause.message : "The server could not be reached."),
-        capacity: { totalBytes: null, usedBytes: null, freeBytes: null },
+        usage: { totalBytes: null, usedBytes: null, freeBytes: null },
         latencyMs: null,
         writable: null,
       };
@@ -192,7 +192,7 @@ export class WebDavConnector {
           response.status === 401
             ? "The server rejected those credentials."
             : "Those credentials are valid but lack access to that path.",
-        capacity: { totalBytes: null, usedBytes: null, freeBytes: null },
+        usage: { totalBytes: null, usedBytes: null, freeBytes: null },
         latencyMs,
         writable: null,
       };
@@ -202,7 +202,7 @@ export class WebDavConnector {
       return {
         state: "error",
         detail: `The server answered ${response.status}.`,
-        capacity: { totalBytes: null, usedBytes: null, freeBytes: null },
+        usage: { totalBytes: null, usedBytes: null, freeBytes: null },
         latencyMs,
         writable: null,
       };
@@ -220,7 +220,7 @@ export class WebDavConnector {
     return {
       state: "connected",
       detail: "Connected.",
-      capacity: {
+      usage: {
         freeBytes: free,
         usedBytes: used,
         totalBytes: free !== null && used !== null ? free + used : null,
@@ -248,6 +248,7 @@ export class WebDavConnector {
 
     const xml = await response.text();
     const self = this.resolve(path);
+    const rootPath = (this.resolve("") ?? "/").replace(/\/+$/, "") || "/";
     const entries: WebDavEntry[] = [];
 
     for (const block of xml.split(/<[^>:]*:?response[\s>]/i).slice(1)) {
@@ -262,9 +263,14 @@ export class WebDavConnector {
       const lengthRaw = tagText(block, "getcontentlength");
       const modified = tagText(block, "getlastmodified");
 
+      // Relative to the connection root: the browser navigates by these, and
+      // handing it absolute server paths would leak the URL layout and break
+      // the moment the base path changed.
+      const relative = rootPath === "/" ? decoded.replace(/^\//, "") : decoded.slice(rootPath.length + 1);
+
       entries.push({
         name: decoded.split("/").filter(Boolean).pop() ?? "",
-        path: decoded,
+        path: relative,
         isDirectory,
         size: lengthRaw && /^\d+$/.test(lengthRaw) ? Number(lengthRaw) : null,
         modifiedAt: modified ? new Date(modified).toISOString() : null,
@@ -281,18 +287,36 @@ export class WebDavConnector {
   }
 
   /** Streams the body straight through; nothing is buffered here. */
-  async upload(path: string, body: BodyInit): Promise<void> {
+  async upload(path: string, body: BodyInit | Readable): Promise<void> {
     const response = await this.request("PUT", path, { body });
     if (response.status === 507) throw new Error("The storage server is out of space.");
     if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
   }
 
-  /** Returns the stream, so a large file never lands in memory. */
-  async download(path: string): Promise<ReadableStream<Uint8Array>> {
+  /** Returns a Node stream, so a large file never lands in memory. */
+  async download(path: string): Promise<Readable> {
     const response = await this.request("GET", path);
     if (response.status === 404) throw new Error("That file does not exist.");
     if (!response.ok || !response.body) throw new Error(`Download failed (${response.status}).`);
-    return response.body;
+    return Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
+  }
+
+  /** One entry, or null. Used by the browser to resolve a path before acting. */
+  async stat(path: string): Promise<StorageEntry | null> {
+    const relative = safeRelativePath(path);
+    if (relative === null) throw new Error("That path is not allowed.");
+    const parent = relative.split("/").slice(0, -1).join("/");
+    const name = relative.split("/").pop() ?? "";
+    try {
+      const siblings = await this.list(parent);
+      return siblings.find((entry) => entry.name === name) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getUsage(): Promise<StorageUsageReport> {
+    return (await this.testConnection()).usage;
   }
 
   async delete(path: string): Promise<void> {

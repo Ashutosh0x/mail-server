@@ -426,6 +426,18 @@ CREATE TABLE IF NOT EXISTS storage_connections (
   -- AES-256-GCM envelope, bound to this row's id as AAD. A dump of this table
   -- is not a usable set of provider credentials.
   encrypted_credentials TEXT,
+  -- Non-secret connection settings: WebDAV URL, bucket, filesystem root. Kept
+  -- out of the sealed blob so listing connections needs no unsealing, and so a
+  -- connection whose credentials fail to open stays visible and fixable.
+  config          TEXT NOT NULL DEFAULT '{}',
+  -- The only path a filesystem-backed connection may touch. Enforced on every
+  -- operation: a path outside it is refused, never clamped.
+  root_path       TEXT,
+  -- Last successful real probe, not last write. "Connected" derives from this.
+  last_verified_at TEXT,
+  -- JSON array of purposes: attachments, files, archive. Empty by default,
+  -- because connecting storage must never silently redirect mail into it.
+  roles           TEXT NOT NULL DEFAULT '[]',
   last_sync_at    TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL

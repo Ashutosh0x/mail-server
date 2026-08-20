@@ -4,7 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon, icons } from "@mailserver/ui";
 import { api, ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
-import type { DiscoveryResult, DiscoveredResource } from "@/lib/storage-types";
+import type {
+  DiscoveryResult,
+  DiscoveredResource,
+  PublicConnection,
+} from "@/lib/storage-types";
+import { FileBrowser } from "./file-browser";
+import { ConnectWebDav } from "./connect-webdav";
 
 /**
  * The Storage page.
@@ -35,17 +41,28 @@ export function StoragePage() {
   const [scanning, setScanning] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<{ usedBytes: number; quotaBytes: number } | null>(null);
+  const [connections, setConnections] = useState<PublicConnection[]>([]);
+  const [localRootsConfigured, setLocalRootsConfigured] = useState(false);
+  /** The connection whose files are open, or null for the dashboard. */
+  const [browsing, setBrowsing] = useState<PublicConnection | null>(null);
+  const [connecting, setConnecting] = useState<null | "webdav">(null);
 
   const scan = useCallback(async () => {
     setScanning(true);
     setError(null);
     try {
-      const [found, account] = await Promise.all([api.discoverStorage(), api.storage()]);
+      const [found, account, connected] = await Promise.all([
+        api.discoverStorage(),
+        api.storage(),
+        api.storageConnections(),
+      ]);
       setDiscovery(found);
       setUsage({
         usedBytes: account.storage.usedBytes,
         quotaBytes: account.storage.quotaBytes,
       });
+      setConnections(connected.connections);
+      setLocalRootsConfigured(connected.localRootsConfigured);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Could not scan for storage.");
     } finally {
@@ -56,6 +73,71 @@ export function StoragePage() {
   useEffect(() => {
     void scan();
   }, [scan]);
+
+  /**
+   * Turn a detected mount into a connection.
+   *
+   * The server decides whether the path is permitted — detection listing a
+   * mount is not consent to expose it, so `STORAGE_LOCAL_ROOTS` has the
+   * final say and a refusal is shown as-is.
+   */
+  const useDetected = useCallback(
+    async (resource: DiscoveredResource) => {
+      try {
+        await api.connectStorage({
+          provider: "local",
+          displayName: resource.name,
+          path: resource.path,
+          readOnly: resource.readOnly === true,
+        });
+        await scan();
+      } catch (cause) {
+        setError(cause instanceof ApiError ? cause.message : "That storage could not be connected.");
+      }
+    },
+    [scan]
+  );
+
+  const disconnect = useCallback(
+    async (connection: PublicConnection) => {
+      const confirmed = window.confirm(
+        `Disconnect "${connection.displayName}"?\n\n` +
+          "This removes the connection from Mail Server. Files on the storage are not deleted."
+      );
+      if (!confirmed) return;
+      try {
+        await api.disconnectStorage(connection.id);
+        await scan();
+      } catch (cause) {
+        setError(cause instanceof ApiError ? cause.message : "That connection could not be removed.");
+      }
+    },
+    [scan]
+  );
+
+  if (browsing) {
+    return (
+      <section aria-label="Storage files" className="flex min-w-0 flex-1 flex-col bg-canvas">
+        <header className="flex items-start gap-3 border-b border-border px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setBrowsing(null)}
+            className="shrink-0 rounded-md border border-border px-2.5 py-1 text-sm font-medium text-ink hover:bg-surface-sunken"
+          >
+            Back
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-semibold text-ink">{browsing.displayName}</h1>
+            <p className="truncate text-xs text-ink-muted">
+              {browsing.provider === "webdav" ? "WebDAV" : "Mounted filesystem"}
+              {browsing.target && ` · ${browsing.target}`}
+            </p>
+          </div>
+        </header>
+        <FileBrowser connectionId={browsing.id} />
+      </section>
+    );
+  }
 
   return (
     <section aria-label="Storage" className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-canvas">
@@ -111,6 +193,67 @@ export function StoragePage() {
             </div>
           ) : (
             <p className="mt-2 text-sm text-ink-muted">Reading usage…</p>
+          )}
+        </section>
+
+        {/* ── Connected: real records, each verified by a real probe ── */}
+        <section>
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold text-ink">Connected storage</h2>
+            <button
+              type="button"
+              onClick={() => setConnecting("webdav")}
+              className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-sunken"
+            >
+              Connect WebDAV
+            </button>
+          </div>
+
+          {connections.length === 0 ? (
+            <p className="mt-2 rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-ink-muted">
+              No external storage connected.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {connections.map((connection) => (
+                <li
+                  key={connection.id}
+                  className="flex items-start gap-3 rounded-lg border border-border bg-surface-raised p-3"
+                >
+                  <Icon icon={icons.account.storage} size="md" className="mt-0.5 shrink-0 text-ink-secondary" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-medium text-ink">{connection.displayName}</span>
+                      <span className="rounded border border-border px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+                        {connection.provider === "webdav" ? "WebDAV" : "Filesystem"}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-ink-muted">{connection.target}</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      {connection.lastVerifiedAt
+                        ? `Verified ${new Date(connection.lastVerifiedAt).toLocaleString()}`
+                        : "Not yet verified"}
+                    </p>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setBrowsing(connection)}
+                      className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-sunken"
+                    >
+                      Open files
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void disconnect(connection)}
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-muted"
+                    >
+                      Disconnect
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 
@@ -192,6 +335,15 @@ export function StoragePage() {
                       )}
                     </p>
                   </div>
+                  {localRootsConfigured && resource.connectionStatus === "available" && (
+                    <button
+                      type="button"
+                      onClick={() => void useDetected(resource)}
+                      className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-sunken"
+                    >
+                      Use this storage
+                    </button>
+                  )}
                   <span
                     className={
                       resource.connectionStatus === "available"
@@ -244,6 +396,16 @@ export function StoragePage() {
           </div>
         </section>
       </div>
+
+      {connecting === "webdav" && (
+        <ConnectWebDav
+          onClose={() => setConnecting(null)}
+          onConnected={() => {
+            setConnecting(null);
+            void scan();
+          }}
+        />
+      )}
     </section>
   );
 }

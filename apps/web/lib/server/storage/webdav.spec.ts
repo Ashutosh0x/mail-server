@@ -150,10 +150,10 @@ describe("WebDAV connection test", () => {
   });
 
   it("reads RFC 4331 quota when the server publishes it", async () => {
-    const { capacity } = await connector().testConnection();
-    expect(capacity.freeBytes).toBe(1073741824);
-    expect(capacity.usedBytes).toBe(4096);
-    expect(capacity.totalBytes).toBe(1073741824 + 4096);
+    const { usage } = await connector().testConnection();
+    expect(usage.freeBytes).toBe(1073741824);
+    expect(usage.usedBytes).toBe(4096);
+    expect(usage.totalBytes).toBe(1073741824 + 4096);
   });
 
   it("reports authentication_required for a bad password, not a generic error", async () => {
@@ -167,7 +167,7 @@ describe("WebDAV connection test", () => {
     const result = await dead.testConnection();
     expect(result.state).toBe("unreachable");
     // Never "connected" on a failure, and no invented capacity.
-    expect(result.capacity.totalBytes).toBeNull();
+    expect(result.usage.totalBytes).toBeNull();
   });
 });
 
@@ -196,14 +196,10 @@ describe("WebDAV file operations", () => {
     const payload = "round trip äöü 🎉";
     await dav.upload("round-trip.txt", payload);
 
+    // A Node stream now, matching the shared connector contract.
     const stream = await dav.download("round-trip.txt");
-    const chunks: Uint8Array[] = [];
-    const reader = stream.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
-    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
     expect(Buffer.concat(chunks).toString("utf8")).toBe(payload);
   });
 

@@ -5,7 +5,7 @@ import type {
   RegistrationResponseJSON,
   AuthenticationResponseJSON,
 } from "@simplewebauthn/browser";
-import type { DiscoveryResult } from "./storage-types";
+import type { ConnectionProbe, DiscoveryResult, PublicConnection } from "./storage-types";
 import type {
   CleanupAction,
   CleanupReport,
@@ -236,6 +236,28 @@ export const api = {
    * browser cannot enumerate the host's mounts or the local network.
    */
   discoverStorage: () => request<DiscoveryResult>("/api/storage/discover"),
+
+  storageConnections: () =>
+    request<{ connections: PublicConnection[]; localRootsConfigured: boolean }>(
+      "/api/storage/connections"
+    ),
+
+  /**
+   * Connect storage. The server probes BEFORE storing, so a failure leaves no
+   * record and the list never shows a connection that has never worked.
+   */
+  connectStorage: (input: Record<string, unknown>) =>
+    request<{ connection: PublicConnection; probe: ConnectionProbe }>("/api/storage/connections", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  /** Removes the connection record. Files on the storage are untouched. */
+  disconnectStorage: (id: string) =>
+    request<{ disconnected: true; detail: string }>(
+      `/api/storage/connections/${encodeURIComponent(id)}`,
+      { method: "DELETE" }
+    ),
 
   preferences: () => request<{ preferences: Preferences }>("/api/account/preferences"),
 
