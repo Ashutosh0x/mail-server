@@ -603,3 +603,162 @@ export function recentRecipients(userId: string, query: string, limit = 8): Rece
     lastUsedAt: row.last_used as string,
   }));
 }
+
+// ── Reply and forward ──────────────────────────────────────────────────────
+
+export type ReplyMode = "reply" | "replyAll" | "forward";
+
+/** RFC 5322 §3.6.5: the prefix is added only when one is not already there. */
+function prefixSubject(subject: string, mode: ReplyMode): string {
+  const trimmed = subject.trim();
+  const prefix = mode === "forward" ? "Fwd: " : "Re: ";
+  const existing = mode === "forward" ? /^fwd?:\s*/i : /^re:\s*/i;
+  if (existing.test(trimmed)) return trimmed;
+  return prefix + trimmed;
+}
+
+function sameAddress(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Build the quoted block that opens a reply or forward.
+ *
+ * The original body is re-sanitised on the way in. It was sanitised when it
+ * was stored, but a quote is untrusted content being placed into a message
+ * this account is about to sign its name to, and the sanitiser is idempotent,
+ * so running it again costs nothing and removes a class of "stored HTML is
+ * already safe" assumption that tends to age badly.
+ */
+function quoteBlock(source: {
+  from: Address;
+  date: string;
+  subject: string;
+  to: Address[];
+  bodyHtml: string;
+}, mode: ReplyMode): string {
+  const who = source.from.name ? `${source.from.name} &lt;${source.from.email}&gt;` : source.from.email;
+  const when = new Date(source.date).toLocaleString("en-US", {
+    weekday: "short", year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+  const body = sanitizeMessageHtml(source.bodyHtml ?? "");
+
+  if (mode === "forward") {
+    const to = source.to.map((a) => (a.name ? `${a.name} &lt;${a.email}&gt;` : a.email)).join(", ");
+    return (
+      `<p><br></p><div><hr><p>---------- Forwarded message ----------<br>` +
+      `<b>From:</b> ${who}<br>` +
+      `<b>Date:</b> ${when}<br>` +
+      `<b>Subject:</b> ${escapeText(source.subject)}<br>` +
+      `<b>To:</b> ${to || "undisclosed recipients"}</p>${body}</div>`
+    );
+  }
+
+  return `<p><br></p><blockquote><p>On ${when}, ${who} wrote:</p>${body}</blockquote>`;
+}
+
+function escapeText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Start a draft that replies to, or forwards, an existing message.
+ *
+ * Built on the server rather than in the composer for two reasons. The stored
+ * body is never exposed to the client — the reading pane deliberately shows a
+ * plain-text preview until the HTML render pipeline exists, and a reply path
+ * that shipped the raw HTML to JavaScript would quietly undo that. And the
+ * threading headers (`In-Reply-To`, `References`) are part of the message's
+ * identity, so they are derived from the row rather than trusted from a
+ * request that could name any message id.
+ *
+ * Returns null when the source does not exist or belongs to someone else. The
+ * caller turns that into a 404 — never a 403, which would confirm the id.
+ */
+export function createReplyDraft(
+  userId: string,
+  from: Address,
+  sourceId: string,
+  mode: ReplyMode
+): string | null {
+  const row = db()
+    .prepare(
+      `SELECT id, thread_id, subject, body_html, body_text, from_name, from_email,
+              message_id, references_list, received_at
+         FROM messages
+        WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND is_draft = 0`
+    )
+    .get(sourceId, userId) as Record<string, unknown> | undefined;
+
+  if (!row) return null;
+
+  const source = {
+    from: {
+      name: (row.from_name as string | null) ?? null,
+      email: (row.from_email as string) ?? "",
+    },
+    date: (row.received_at as string) ?? nowIso(),
+    subject: (row.subject as string) ?? "",
+    bodyHtml: (row.body_html as string) || escapeText((row.body_text as string) ?? ""),
+  };
+
+  const original = readRecipients(sourceId);
+
+  // Reply goes to the sender. Reply-all adds everyone else who was on it,
+  // minus this account — replying to yourself is never what was meant.
+  let to: Address[] = [];
+  let cc: Address[] = [];
+  if (mode === "reply") {
+    to = source.from.email ? [source.from] : [];
+  } else if (mode === "replyAll") {
+    to = source.from.email ? [source.from] : [];
+    const seen = new Set([from.email.toLowerCase(), source.from.email.toLowerCase()]);
+    for (const address of [...original.to, ...original.cc]) {
+      const key = address.email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cc.push(address);
+    }
+  }
+
+  // A forward starts with no recipients: the whole point is choosing them, and
+  // pre-filling the original ones is how a private thread gets leaked.
+  if (mode === "forward") {
+    to = [];
+    cc = [];
+  }
+
+  const draftId = createDraft(userId, from);
+
+  // `References` accumulates: the original chain plus the message being
+  // answered. Forwarding starts a new conversation, so it carries neither.
+  const parentMessageId = (row.message_id as string | null) ?? null;
+  const priorReferences = row.references_list
+    ? (JSON.parse(row.references_list as string) as string[])
+    : [];
+
+  saveDraft(userId, draftId, {
+    to,
+    cc,
+    bcc: [],
+    subject: prefixSubject(source.subject, mode),
+    bodyHtml: quoteBlock({ ...source, to: original.to }, mode),
+    inReplyTo: mode === "forward" ? null : parentMessageId,
+    references:
+      mode === "forward" || !parentMessageId ? [] : [...priorReferences, parentMessageId],
+  });
+
+  // Reply and forward both stay in the source's conversation for reply, but a
+  // forward is a new thread. Only the reply case is re-parented.
+  if (mode !== "forward") {
+    db()
+      .prepare(`UPDATE messages SET thread_id = ? WHERE id = ? AND user_id = ?`)
+      .run(row.thread_id as string, draftId, userId);
+  }
+
+  return draftId;
+}

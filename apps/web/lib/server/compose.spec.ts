@@ -124,3 +124,100 @@ describe("draft round-trip", () => {
     expect(compose.loadDraft(USER, id)!.subject).toBe("v1");
   });
 });
+
+describe("reply and forward", () => {
+  /** A received message from someone else, with this account on the Cc line. */
+  function inbound(): string {
+    const id = "msg-" + Math.random().toString(36).slice(2);
+    const now = new Date().toISOString();
+    db()
+      .prepare(
+        `INSERT INTO mailboxes (id, user_id, role, name, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`
+      )
+      .run("mb-inbox", USER, "inbox", "Inbox", 0, now);
+    db()
+      .prepare(`INSERT INTO threads (id, user_id, subject_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)`)
+      .run("th-" + id, USER, "budget", now, now);
+    db()
+      .prepare(
+        `INSERT INTO messages
+           (id, user_id, thread_id, mailbox_id, from_name, from_email, subject,
+            preview, body_text, body_html, message_id, references_list,
+            is_draft, is_read, received_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
+      )
+      .run(
+        id, USER, "th-" + id, "mb-inbox", "Dana", "dana@example.test",
+        "Budget review", "text", "text", "<p>The numbers</p>",
+        `<${id}@example.test>`, JSON.stringify(["<root@example.test>"]), now, now
+      );
+    db()
+      .prepare(`INSERT INTO message_recipients (id, message_id, kind, name, email, position)
+                VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("r1-" + id, id, "to", null, "lee@example.test", 0);
+    db()
+      .prepare(`INSERT INTO message_recipients (id, message_id, kind, name, email, position)
+                VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("r2-" + id, id, "cc", null, FROM.email, 0);
+    return id;
+  }
+
+  it("replies to the sender alone", () => {
+    const draftId = compose.createReplyDraft(USER, FROM, inbound(), "reply")!;
+    const draft = compose.loadDraft(USER, draftId)!;
+    expect(draft.to).toEqual([{ name: "Dana", email: "dana@example.test" }]);
+    expect(draft.cc).toEqual([]);
+    expect(draft.subject).toBe("Re: Budget review");
+  });
+
+  it("reply-all keeps the other recipients but never the account itself", () => {
+    const draftId = compose.createReplyDraft(USER, FROM, inbound(), "replyAll")!;
+    const draft = compose.loadDraft(USER, draftId)!;
+    expect(draft.to).toEqual([{ name: "Dana", email: "dana@example.test" }]);
+    expect(draft.cc!.map((a) => a.email)).toEqual(["lee@example.test"]);
+    // Replying to yourself is never what was meant.
+    expect(draft.cc!.map((a) => a.email)).not.toContain(FROM.email);
+  });
+
+  it("carries the threading headers so the reply lands in the conversation", () => {
+    const id = inbound();
+    const draftId = compose.createReplyDraft(USER, FROM, id, "reply")!;
+    const draft = compose.loadDraft(USER, draftId)!;
+    expect(draft.inReplyTo).toBe(`<${id}@example.test>`);
+    expect(draft.references).toEqual(["<root@example.test>", `<${id}@example.test>`]);
+  });
+
+  it("forwards with NO recipients, and starts a new chain", () => {
+    const draftId = compose.createReplyDraft(USER, FROM, inbound(), "forward")!;
+    const draft = compose.loadDraft(USER, draftId)!;
+    // Pre-filling the original recipients is how a private thread gets leaked.
+    expect(draft.to).toEqual([]);
+    expect(draft.cc).toEqual([]);
+    expect(draft.subject).toBe("Fwd: Budget review");
+    expect(draft.inReplyTo).toBeNull();
+    expect(draft.references).toEqual([]);
+  });
+
+  it("quotes the real stored body", () => {
+    const draftId = compose.createReplyDraft(USER, FROM, inbound(), "reply")!;
+    expect(compose.loadDraft(USER, draftId)!.bodyHtml).toContain("The numbers");
+  });
+
+  it("does not stack prefixes on an already-prefixed subject", () => {
+    const id = inbound();
+    db().prepare(`UPDATE messages SET subject = ? WHERE id = ?`).run("Re: Budget review", id);
+    const draftId = compose.createReplyDraft(USER, FROM, id, "reply")!;
+    expect(compose.loadDraft(USER, draftId)!.subject).toBe("Re: Budget review");
+  });
+
+  it("refuses to reply to another account's message", () => {
+    expect(compose.createReplyDraft("someone-else", FROM, inbound(), "reply")).toBeNull();
+  });
+
+  it("refuses to reply to a draft", () => {
+    const draft = compose.createDraft(USER, FROM);
+    expect(compose.createReplyDraft(USER, FROM, draft, "reply")).toBeNull();
+  });
+});

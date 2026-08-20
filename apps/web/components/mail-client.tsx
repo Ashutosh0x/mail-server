@@ -6,7 +6,7 @@ import { parseQuery, removeTermAt, termsOf } from "@mailserver/types";
 import { Icon, cn, icons } from "@mailserver/ui";
 import { api, ApiError, type SessionInfo } from "@/lib/api";
 import { MailListItem, ROW_HEIGHT, type Density } from "./mail-list-item";
-import { ReadingPane } from "./reading-pane";
+import { ReadingPane, type ThreadAction } from "./reading-pane";
 import { Sidebar } from "./sidebar";
 import { useToast } from "./interaction/toast";
 import { useFlipList } from "./interaction/use-flip-list";
@@ -233,6 +233,44 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
       }
     },
     [activeMailboxId, debouncedQuery, loadFolders, loadThreads, toast, measure]
+  );
+
+  /**
+   * The reading pane's action row.
+   *
+   * Reply, reply-all and forward all resolve to the same thing: ask the server
+   * to build a draft from the stored message, then open that draft in the
+   * composer. The composer needs no reply-specific mode, because a reply IS a
+   * draft — the same one it already knows how to reopen.
+   */
+  const [threadBusy, setThreadBusy] = useState(false);
+  const runThreadAction = useCallback(
+    (action: ThreadAction) => {
+      const message = openThread?.latest;
+      if (!message || threadBusy) return;
+
+      if (action === "archive" || action === "delete") {
+        setOpenId(null);
+        void act(action === "delete" ? "trash" : "archive", [message.id]);
+        return;
+      }
+
+      setThreadBusy(true);
+      void api
+        .createDraft({ mode: action, sourceId: message.id })
+        .then((result) => {
+          setReopenDraftId(result.draftId);
+          setComposing(true);
+        })
+        .catch((cause) => {
+          toast.show(
+            cause instanceof ApiError ? cause.message : "Could not start that reply.",
+            { tone: "error" }
+          );
+        })
+        .finally(() => setThreadBusy(false));
+    },
+    [openThread, threadBusy, act, toast]
   );
 
   const visible = threads ?? [];
@@ -506,7 +544,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
                 : "hidden md:block"
             )}
           >
-            <ReadingPane thread={openThread} />
+            <ReadingPane thread={openThread} busy={threadBusy} onAction={runThreadAction} />
           </div>
         </div>
 

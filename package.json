@@ -16,7 +16,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:migrate": "npm -w @mailserver/database run migrate",
     "db:migrate:plan": "npm -w @mailserver/database run migrate:plan",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "clean": "git clean -xdf node_modules .turbo .next dist"
   },
   "devDependencies": {
     "turbo": "^2.4.0",

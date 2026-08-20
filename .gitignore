@@ -50,3 +50,15 @@ yarn-error.log*
 
 # Temporary databases created by DB-backed tests.
 .test-tmp/
+
+# Keys and certificates. *.pem alone missed the other half of a TLS pair.
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+
+# Editor state, which is per-person and not per-project.
+.vscode/
+.idea/
+*.swp

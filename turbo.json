@@ -3,6 +3,33 @@
   "globalDependencies": [
     "**/.env.*local"
   ],
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "DATABASE_FILE",
+    "SECRETS_KEY",
+    "SESSION_TTL_SECONDS",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_FROM",
+    "SMTP_ALLOW_INSECURE",
+    "WEBAUTHN_RP_ID",
+    "WEBAUTHN_RP_NAME",
+    "WEBAUTHN_ORIGINS",
+    "OBJECT_STORAGE_DRIVER",
+    "OBJECT_STORAGE_ROOT",
+    "NFS_REQUIRE_NETWORK_FS",
+    "NFS_DEGRADED_ABOVE_MS",
+    "MAX_ATTACHMENT_SIZE_BYTES",
+    "MAX_OUTBOUND_MESSAGE_SIZE_BYTES",
+    "MAX_TOTAL_MESSAGE_SIZE_BYTES",
+    "MAX_USER_STORAGE_BYTES",
+    "MAX_RECIPIENTS_PER_MESSAGE",
+    "UPLOAD_CHUNK_SIZE_BYTES",
+    "DEFAULT_PAGE_SIZE",
+    "MAX_PAGE_SIZE"
+  ],
   "tasks": {
     "build": {
       "dependsOn": [

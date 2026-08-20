@@ -5,16 +5,31 @@ import { Icon, cn, iconForMimeType, icons } from "@mailserver/ui";
 import { formatBytes, initialsOf, senderLabel } from "@/lib/format";
 import { AuthenticationChips, PhishingBanner } from "./verdict-badge";
 
+/**
+ * Every action here does something. Snooze used to sit in this row and was
+ * removed rather than left in place: there is no scheduler behind it, and a
+ * button that silently does nothing is worse than an absent one.
+ */
 const ACTIONS = [
   { key: "reply", icon: icons.threadAction.reply, label: "Reply", shortcut: "R" },
   { key: "replyAll", icon: icons.threadAction.replyAll, label: "Reply all", shortcut: "A" },
   { key: "forward", icon: icons.threadAction.forward, label: "Forward", shortcut: "F" },
   { key: "archive", icon: icons.threadAction.archive, label: "Archive", shortcut: "E" },
-  { key: "snooze", icon: icons.threadAction.snooze, label: "Snooze", shortcut: "H" },
   { key: "delete", icon: icons.threadAction.delete, label: "Delete", shortcut: "#" },
 ] as const;
 
-export function ReadingPane({ thread }: { thread: Thread | null }) {
+export type ThreadAction = (typeof ACTIONS)[number]["key"];
+
+export function ReadingPane({
+  thread,
+  onAction,
+  busy,
+}: {
+  thread: Thread | null;
+  onAction?: (action: ThreadAction) => void;
+  /** True while an action is in flight, so it cannot be fired twice. */
+  busy?: boolean;
+}) {
   if (!thread) {
     return (
       <section className="flex flex-1 flex-col items-center justify-center gap-3 bg-canvas p-8 text-center">
@@ -45,7 +60,9 @@ export function ReadingPane({ thread }: { thread: Thread | null }) {
               key={action.key}
               type="button"
               title={`${action.label} (${action.shortcut})`}
-              className="rounded-md p-2 text-ink-secondary transition-colors duration-[--duration-fast] hover:bg-surface-sunken hover:text-ink"
+              disabled={busy}
+              onClick={() => onAction?.(action.key)}
+              className="rounded-md p-2 text-ink-secondary transition-colors duration-[--duration-fast] hover:bg-surface-sunken hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Icon icon={action.icon} size="md" label={action.label} />
             </button>
@@ -84,11 +101,16 @@ export function ReadingPane({ thread }: { thread: Thread | null }) {
           </div>
 
           {/*
-            The body is a placeholder rather than rendered HTML, deliberately.
-            Section 16 requires DOMPurify sanitisation, remote-image blocking,
-            tracker stripping and a sandboxed iframe before any untrusted HTML
-            reaches the DOM. That pipeline is not built yet, so this shows the
-            server's plain-text preview instead of pretending to be safe.
+            The body is the server's plain-text preview, deliberately, not
+            rendered HTML.
+
+            Sanitisation itself DOES exist — lib/server/sanitize.ts, allow-list
+            based and covered by 22 tests — and every outgoing body passes
+            through it. What is still missing is the rest of the read path:
+            remote-image blocking, tracker stripping, and a sandboxed frame to
+            render in. Sanitised HTML injected straight into this document
+            would still leak a read receipt to every remote image on load, so
+            the preview stays until those three exist.
           */}
           <div className="p-4">
             <p className="whitespace-pre-wrap text-base leading-relaxed text-ink-secondary">{latest.preview}</p>

@@ -207,10 +207,15 @@ export const api = {
       `/api/recipients?q=${encodeURIComponent(query)}`
     ),
 
-  createDraft: () =>
+  /**
+   * Start a draft. With `reply`, the server builds it from the stored message —
+   * recipients, subject, quote and threading headers all come from the row, not
+   * from here.
+   */
+  createDraft: (reply?: { mode: "reply" | "replyAll" | "forward"; sourceId: string }) =>
     request<{ draftId: string; senders: { name?: string | null; email: string }[] }>(
       "/api/drafts",
-      { method: "POST" }
+      { method: "POST", ...(reply ? { body: JSON.stringify(reply) } : {}) }
     ),
 
   saveDraft: (
