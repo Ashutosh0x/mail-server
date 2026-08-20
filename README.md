@@ -19,11 +19,11 @@
 [![MinIO](https://img.shields.io/badge/MinIO-S3-C72E49?style=for-the-badge&logo=minio&logoColor=white)](https://min.io)
 [![Rspamd](https://img.shields.io/badge/Rspamd-4.1-2E7D32?style=for-the-badge&logo=maildotcom&logoColor=white)](https://rspamd.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![Vitest](https://img.shields.io/badge/Vitest-363_passing-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
+[![Vitest](https://img.shields.io/badge/Vitest-401_passing-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](#license)
 [![Typecheck](https://img.shields.io/badge/typecheck-3%2F3-success?style=flat-square)](#verification)
-[![Tests](https://img.shields.io/badge/tests-363_passing-success?style=flat-square)](#verification)
+[![Tests](https://img.shields.io/badge/tests-401_passing-success?style=flat-square)](#verification)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-NOT_MEASURED-lightgrey?style=flat-square)](docs/adr/0006-benchmark-methodology.md)
 
 </div>
@@ -61,7 +61,7 @@ Node 22+ is the entire requirement. The database is SQLite through
 
 ```bash
 npm install
-npm test                                   # 363 tests across four packages
+npm test                                   # 401 tests across four packages
 npm --workspace @mailserver/web run dev    # http://localhost:3000
 ```
 
@@ -99,7 +99,7 @@ roadmap entirely. See [ADR-0002](docs/adr/0002-calendar-architecture.md),
 | `packages/types` | Domain contract, search grammar, storage federation, connector contract | **built · 57 tests** |
 | `packages/ui` | OKLCH design tokens, icon registry, motion and haptic systems | **built · 33 tests** |
 | `packages/database` | Postgres migrations, SQLite dev schema, migration runner | **built · 10 tests** |
-| `apps/web` | Webmail client, composer, security center, storage layer, 35 API routes | **built · 263 tests** |
+| `apps/web` | Webmail client, composer, security center, storage layer, platform adapters, 39 API routes | **built · 301 tests** |
 | `benchmarks/` | Scenario definitions | **no results — nothing has been run** |
 | `infrastructure/` | Compose, Stalwart and Rspamd config | scaffold, **never executed** |
 | `services/api` | Rust/Axum gateway | not started |
@@ -196,6 +196,9 @@ Status is evidence-based, not aspirational:
 |---|---|---|
 | Filesystem driver | **Built** | Atomic `.part` → rename, path-traversal prevention, real health probe |
 | Storage page | **Built** | Sidebar entry; shows quota, detected volumes, and each connector's real state |
+| Cross-platform layer | **Built** | One module owns platform detection; a CI job fails the build if a raw `process.platform` check appears elsewhere. Per-OS data directories, path-list separators and normalised OS errors |
+| Capability API | **Built** | `GET /api/system/capabilities` reports what *this* host can do, so the UI stops guessing |
+| CI matrix | **Built** | Same typecheck/test/build on `ubuntu-latest`, `windows-latest` and `macos-latest`, `fail-fast: false` |
 | Device discovery | **Built** | Real host mounts via `/proc/mounts`, `Win32_LogicalDisk` or `mount`. Capacity from `statfs` — "Capacity unavailable" where the OS does not say |
 | WebDAV connector | **Built** | list, upload, download, move, copy, delete, RFC 4331 quota. 15 tests against a real WebDAV server |
 | SSRF endpoint guard | **Built** | Blocks private/loopback/link-local **after DNS resolution**, so a hostname resolving to `169.254.169.254` is refused. 31 tests |
@@ -277,6 +280,8 @@ client by `GET /api/config` — the frontend hardcodes none of them.
 | `MAX_OUTBOUND_MESSAGE_SIZE_BYTES` | 25 MB | Body **and** attachments, measured before transfer encoding — the basis receivers actually publish |
 | `MAX_USER_STORAGE_BYTES` | 15 GB | Per-user quota |
 | `MAX_RECIPIENTS_PER_MESSAGE` | 100 | Matches the limit Google documents for SMTP submission |
+| `MAILSERVER_DATA_DIR` | per-OS | Overrides the data directory. Same for `_CONFIG_`, `_LOG_`, `_STORAGE_`, `_CACHE_`, `_TEMP_` |
+| `STORAGE_LOCAL_ROOTS` | *(unset)* | Paths that may become local storage connections. Unset means local connections are refused — otherwise any signed-in user could root one at `C:\` |
 | `STORAGE_ALLOW_PRIVATE_ENDPOINTS` | `false` | Let connectors reach RFC 1918 / loopback. Needed for a NAS on your own LAN |
 | `WEBDAV_ALLOW_INSECURE` | `false` | Permit `http://` WebDAV. Basic auth sends the password in cleartext on every request |
 | `SESSION_TTL_SECONDS` | 30 days | Session cookie lifetime |
@@ -310,7 +315,7 @@ call stacks). Verified 2026-08-20: the production client bundle contains zero
 
 ```
 turbo typecheck    3 successful, 3 total
-turbo test         363 passing — types 57 · ui 33 · database 10 · web 263
+turbo test         401 passing — types 57 · ui 33 · database 10 · web 301
 next build         compiled successfully
 ```
 
@@ -323,6 +328,7 @@ Start at **[docs/](docs/)**. The most useful entry points:
 - [Security model](docs/security.md) — and what is missing from it
 - [Blueprint verification](docs/blueprint-verification.md) — planning documents
   checked against primary sources
+- [Cross-platform](docs/cross-platform.md) — the platform layer, per-OS directories, and the honest support matrix
 - [Storage](docs/storage.md) — connectors, discovery, SSRF guard, and what is not built
 - [Audit verification](docs/AUDIT-VERIFICATION.md) — pasted audit reports checked
   claim by claim against the repository

@@ -1,5 +1,6 @@
 import "server-only";
 import { resolve, sep } from "node:path";
+import { pathListSeparator, pathListSeparatorName } from "../platform/platform";
 
 /**
  * Which host paths may be turned into a storage connection.
@@ -23,7 +24,7 @@ import { resolve, sep } from "node:path";
 export function configuredRoots(): string[] {
   const raw = process.env.STORAGE_LOCAL_ROOTS;
   if (!raw) return [];
-  const separator = process.platform === "win32" ? ";" : ":";
+  const separator = pathListSeparator();
   return raw
     .split(separator)
     .map((entry) => entry.trim())
@@ -52,7 +53,7 @@ export function checkLocalRoot(requested: string): RootVerdict {
       reason:
         "Local storage connections are disabled. Set STORAGE_LOCAL_ROOTS on the server to the paths " +
         "that may be used, separated by " +
-        (process.platform === "win32" ? "semicolons" : "colons") +
+        pathListSeparatorName() +
         ".",
     };
   }

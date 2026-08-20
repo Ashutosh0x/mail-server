@@ -19,6 +19,7 @@ loses data rather than showing an error.
 
 | Capability | Status | Verified how |
 |---|---|---|
+| Cross-platform support | **See [cross-platform.md](cross-platform.md)** | Windows verified by hand; Linux and macOS by CI |
 | Local filesystem storage | **Implemented** | 27 tests; atomic `.part` → rename, traversal refused |
 | NFS storage *root* | **Implemented** | Mount verified via `statfs` magic `0x6969` and device-id boundary |
 | Mounted-filesystem discovery | **Implemented** | Real volumes read from the OS; verified on Windows against a 511 GB disk |
@@ -28,8 +29,11 @@ loses data rather than showing an error.
 | SMB connector | **Planned** | Mounted shares are *detected*; connecting to an unmounted share is not built |
 | S3-compatible connector | **Planned** | Needs SigV4 signing, unwritten and unverified |
 | mDNS / SSDP discovery | **Planned** | Unmounted LAN devices are not discovered |
-| File browser | **Planned** | The connector supports the operations; no UI reaches them |
-| Attachment storage on an external provider | **Planned** | Mail still stores attachments through the local provider |
+| File browser | **Implemented** | Breadcrumbs, sort, filter, upload with real progress, download, rename, delete, mkdir. Verified 11/11 through the UI against a real WebDAV server |
+| Storage connections | **Implemented** | Probed before saving, so a failed connection leaves no row. 22 tests + 23/23 API checks |
+| Connector contract | **Implemented** | One interface for every backend; the UI holds no provider-specific logic |
+| Local directory connector | **Implemented** | 22 tests. Confinement checked twice — normalised, then re-checked after resolution to catch a symlink or junction |
+| Attachment storage on an external provider | **Planned** | Roles are stored, but mail still uses the configured object-storage driver. Connecting storage must never silently redirect mail |
 
 ---
 

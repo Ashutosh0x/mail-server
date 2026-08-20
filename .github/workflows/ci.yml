@@ -1,0 +1,107 @@
+# Cross-platform CI.
+#
+# The point of this file is that "works on Windows, Linux and macOS" stops
+# being a claim. Every push runs the same typecheck, the same tests and the
+# same production build on all three, so a platform assumption that slips into
+# the code fails here rather than in front of someone installing it.
+#
+# macos-latest is Apple Silicon (arm64) and ubuntu/windows are x64, so this
+# matrix also covers three of the architecture combinations the project claims.
+# Anything not covered here is documented as untested rather than assumed to
+# work — see docs/cross-platform.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes an in-flight run for the same ref. Cancelling in
+# progress rather than queueing keeps feedback fast on an active branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    # A single platform hanging must not hold the whole matrix.
+    timeout-minutes: 20
+
+    strategy:
+      # Never stop the other platforms when one fails: knowing that a change
+      # breaks Windows but passes on Linux and macOS is the useful signal, and
+      # fail-fast throws exactly that away.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        # node:sqlite is the development database and needs 22+.
+        node: ["22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it installs exactly the lockfile,
+      # so a transitive update cannot make one platform's run differ from
+      # another's for reasons unrelated to the change being tested.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # --force because turbo's cache is keyed on inputs, not on the OS. A
+      # cached "pass" from another platform would make this job green without
+      # having run anything, which is the failure mode this whole matrix exists
+      # to prevent.
+      - name: Test
+        run: npx turbo test --force
+
+      - name: Build
+        run: npm run build
+
+      # Records what each runner actually reported, so the support matrix in
+      # the docs is backed by output rather than by assumption.
+      - name: Report platform capabilities
+        shell: bash
+        run: |
+          node -e "
+            const os = require('node:os');
+            console.log('platform :', os.platform());
+            console.log('arch     :', os.arch());
+            console.log('release  :', os.release());
+            console.log('node     :', process.version);
+            console.log('tmpdir   :', os.tmpdir());
+            console.log('delimiter:', require('node:path').delimiter);
+          "
+
+  # Fails the build if the storage layer regains a raw platform check outside
+  # the platform module. Cheap to run, and it catches the specific drift that
+  # turns one codebase into three.
+  platform-layer:
+    name: platform abstraction is respected
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: No scattered process.platform checks
+        shell: bash
+        run: |
+          matches=$(grep -rn "process\.platform" apps/web/lib apps/web/app apps/web/components \
+            --include="*.ts" --include="*.tsx" \
+            | grep -v "platform/platform.ts" \
+            | grep -v "\.spec\.ts" || true)
+          if [ -n "$matches" ]; then
+            echo "Platform checks belong in lib/server/platform/platform.ts:"
+            echo "$matches"
+            exit 1
+          fi
+          echo "No platform checks outside the platform layer."

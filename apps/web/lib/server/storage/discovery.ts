@@ -2,6 +2,7 @@ import "server-only";
 import { execFile } from "node:child_process";
 import { readFile, statfs } from "node:fs/promises";
 import { promisify } from "node:util";
+import { platformId, platformInfo } from "../platform/platform";
 
 const run = promisify(execFile);
 
@@ -263,13 +264,22 @@ export async function discoverStorage(): Promise<DiscoveryResult> {
   const errors: string[] = [];
   let resources: DiscoveredResource[] = [];
 
+  // One dispatch, through the platform layer. Each adapter below owns how its
+  // operating system reports mounts; nothing outside them knows the difference.
+  const ADAPTERS: Record<string, () => Promise<DiscoveredResource[]>> = {
+    linux: discoverLinux,
+    windows: discoverWindows,
+    macos: discoverBsd,
+  };
+
   try {
-    if (process.platform === "linux") resources = await discoverLinux();
-    else if (process.platform === "win32") resources = await discoverWindows();
-    else if (process.platform === "darwin" || process.platform === "freebsd") {
-      resources = await discoverBsd();
+    const adapter = ADAPTERS[platformId()];
+    if (adapter) {
+      resources = await adapter();
     } else {
-      errors.push(`Storage discovery is not implemented for ${process.platform}.`);
+      errors.push(
+        `Storage discovery is not implemented for this platform (${platformInfo().rawPlatform}).`
+      );
     }
   } catch (cause) {
     errors.push(
@@ -286,7 +296,7 @@ export async function discoverStorage(): Promise<DiscoveryResult> {
       // Not implemented. Stated as a fact rather than left for the UI to guess.
       mdns: false,
       ssdp: false,
-      platform: process.platform,
+      platform: platformId(),
     },
     errors,
   };

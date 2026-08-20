@@ -2,6 +2,7 @@ import "server-only";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { FilesystemStorage } from "./filesystem";
+import { platformId } from "../platform/platform";
 import {
   FS_MAGIC,
   isNetworkFilesystem,
@@ -64,7 +65,9 @@ export class NfsStorage extends FilesystemStorage {
    * either answer there would be a guess.
    */
   private async isMountPoint(): Promise<boolean | null> {
-    if (process.platform === "win32") return null;
+    // st_dev is meaningful on POSIX; Windows reports no comparable value,
+    // so the honest answer there is "unknown" rather than a guess.
+    if (platformId() === "windows") return null;
     try {
       const here = await stat(this.root);
       const parent = await stat(resolve(this.root, ".."));
@@ -102,7 +105,7 @@ export class NfsStorage extends FilesystemStorage {
         // Both signals unavailable. Say so rather than assert health.
         state = "unknown";
         detail =
-          `This platform (${process.platform}) does not report filesystem type ` +
+          `This platform (${platformId()}) does not report filesystem type ` +
           "or mount boundaries, so NFS cannot be confirmed. Read and write " +
           "probes succeeded, but the backend is unverified.";
       }
