@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      A bare splash theme. The real palette lives in Compose (ui/theme), which
+      is the single source of colour; duplicating it in XML would give the app
+      two definitions that drift.
+    -->
+    <style name="Theme.MailServer" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/canvas</item>
+    </style>
+</resources>

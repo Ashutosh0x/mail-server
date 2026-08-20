@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is permitted only for the two addresses a development server can
+  realistically live on, and only in debug builds via the overlay in
+  src/debug/res. The base config below is what ships: TLS everywhere.
+
+  This is not belt-and-braces. The session cookie is issued with `secure` set
+  when NODE_ENV=production (see lib/server/auth.ts), so a release build talking
+  over plain HTTP would authenticate and then silently lose its session.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

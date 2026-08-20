@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An envelope, drawn as vector so it needs no raster assets at any density. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,40 L78,40 A4,4 0 0 1 82,44 L82,68 A4,4 0 0 1 78,72 L30,72 A4,4 0 0 1 26,68 L26,44 A4,4 0 0 1 30,40 Z" />
+    <path
+        android:strokeColor="#2F5BD7"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M28,43 L54,60 L80,43" />
+</vector>

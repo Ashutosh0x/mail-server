@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY. This file lives in src/debug and never reaches a release
+  APK; src/main's config is what ships, and it permits no cleartext at all.
+
+  Cleartext is allowed generally here rather than for an enumerated list of
+  addresses. The list was 10.0.2.2, localhost and 127.0.0.1 — the emulator's
+  routes — which is exactly the set that stops working the moment the app runs
+  on a physical phone, because the dev server is then on the host's LAN address
+  and that address is different on every machine and changes with the network.
+  Android's network-security-config matches literal hosts, not CIDR ranges, so
+  "permit RFC1918" cannot be expressed; the honest choice is either to permit
+  cleartext for debug builds or to make every developer hand-edit this file.
+
+  This is safe for the narrow reason that it is debug-scoped, and for no other
+  reason. It does NOT relax anything in production:
+
+    - The release config in src/main keeps cleartextTrafficPermitted="false".
+    - MAILSERVER_BASE_URL_RELEASE has no default, so a release build with no
+      HTTPS URL fails to build rather than falling back to plain HTTP.
+    - The session cookie is issued with `secure` set when NODE_ENV=production
+      (lib/server/auth.ts), so a production server would refuse to keep a
+      session over cleartext regardless of what this file said.
+
+  The user trust anchor stays for debug only, so a proxy such as mitmproxy can
+  be used to inspect traffic against a local server. It is absent from the
+  release config, where trusting user-installed CAs would let anyone who can
+  add a certificate to the device read a real account's mail.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

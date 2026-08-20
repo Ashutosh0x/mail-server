@@ -1,0 +1,14 @@
+*.iml
+.gradle/
+local.properties
+build/
+.idea/
+.kotlin/
+*.jks
+*.keystore
+keystore.properties
+
+# JVM crash dumps from Gradle running out of native memory. Machine-specific,
+# can be tens of megabytes, and record the host's environment.
+hs_err_pid*.log
+replay_pid*.log

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors the color-canvas token in packages/ui/src/theme.css, for the
+         window background that exists before Compose draws its first frame.
+         (The CSS custom-property spelling is avoided here because a double
+         hyphen is not legal inside an XML comment.) -->
+    <color name="canvas">#FCFCFC</color>
+    <color name="launcher_background">#2F5BD7</color>
+</resources>
