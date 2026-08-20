@@ -204,3 +204,48 @@ describe("connection probe", () => {
     expect(probe.usage.totalBytes).toBeNull();
   });
 });
+
+describe("a root reached through a symlink", () => {
+  /**
+   * The case CI found on macOS and Windows.
+   *
+   * A connector can legitimately be given a root whose path is not canonical:
+   * on macOS `/var` is a symlink to `/private/var`, so anything under the temp
+   * directory resolves to a different string than it was handed. On Windows
+   * the same happens with 8.3 short names (`RUNNER~1`).
+   *
+   * Comparing a resolved candidate against an unresolved root refuses every
+   * one of those paths. It cannot reproduce on a machine whose paths are
+   * already canonical, which is why it survived local runs and failed the
+   * moment CI ran it elsewhere.
+   */
+  it("works when the configured root is itself a link", async () => {
+    const base = mkdtempSync(join(tmpdir(), "linkroot-"));
+    const real = join(base, "real");
+    const link = join(base, "link");
+    mkdirSync(real, { recursive: true });
+    writeFileSync(join(real, "inside.txt"), "reachable\n");
+
+    try {
+      symlinkSync(real, link, "junction");
+    } catch {
+      // Symlink creation can require privileges. Skipping is honest.
+      rmSync(base, { recursive: true, force: true });
+      return;
+    }
+
+    // Rooted at the LINK, not at its target.
+    const connector = new LocalDirectoryConnector(link);
+
+    const names = (await connector.list("")).map((e) => e.name);
+    expect(names).toContain("inside.txt");
+
+    await connector.upload("written.txt", Readable.from([Buffer.from("ok")]));
+    expect(readFileSync(join(real, "written.txt"), "utf8")).toBe("ok");
+
+    // Confinement still holds: the link is the root, not a way around it.
+    await expect(connector.list("..")).rejects.toThrow(/not allowed/i);
+
+    rmSync(base, { recursive: true, force: true });
+  });
+});

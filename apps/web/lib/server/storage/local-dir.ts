@@ -41,6 +41,25 @@ export class LocalDirectoryConnector implements StorageConnector {
     this.root = resolve(root);
   }
 
+  /**
+   * The root in canonical form, resolved once and reused.
+   *
+   * Falls back to the configured path when the root does not exist: a missing
+   * root is a real condition the caller should hear about from the operation
+   * it attempted, not as a confusing traversal refusal from this check.
+   */
+  private canonicalRootCache: string | null = null;
+
+  private async canonicalRoot(): Promise<string> {
+    if (this.canonicalRootCache !== null) return this.canonicalRootCache;
+    try {
+      this.canonicalRootCache = await realpath(this.root);
+    } catch {
+      this.canonicalRootCache = this.root;
+    }
+    return this.canonicalRootCache;
+  }
+
   capabilities(): ConnectorCapabilities {
     return {
       read: true,
@@ -73,11 +92,23 @@ export class LocalDirectoryConnector implements StorageConnector {
       throw new Error("That path is outside the storage root.");
     }
 
+    // Both sides must be canonical before they are compared. Comparing a
+    // resolved candidate against an unresolved root rejects perfectly legal
+    // paths on two of the three supported platforms:
+    //
+    //   macOS   /var is a symlink to /private/var, so a root under the temp
+    //           directory resolves to a different string than it was given.
+    //   Windows a path can arrive as an 8.3 short name (RUNNER~1) and resolve
+    //           to its long form.
+    //
+    // Found by CI on macos-latest and windows-latest; it cannot reproduce on a
+    // developer machine whose paths happen to already be canonical.
+    const realRoot = await this.canonicalRoot();
+
     try {
       const real = await realpath(mustExist ? candidate : dirname(candidate));
-      const bound = mustExist ? real : real;
-      if (bound !== this.root && !bound.startsWith(this.root + sep)) {
-        // A symlink inside the root pointing out of it.
+      if (real !== realRoot && !real.startsWith(realRoot + sep)) {
+        // A symlink or junction inside the root pointing out of it.
         throw new Error("That path resolves outside the storage root.");
       }
     } catch (cause) {
