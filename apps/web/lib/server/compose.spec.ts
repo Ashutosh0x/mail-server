@@ -221,3 +221,59 @@ describe("reply and forward", () => {
     expect(compose.createReplyDraft(USER, FROM, draft, "reply")).toBeNull();
   });
 });
+
+describe("thread list", () => {
+  let mail: typeof import("./mail");
+
+  beforeAll(async () => {
+    mail = await import("./mail");
+  });
+
+  it("returns one row per thread, even with several messages in it", () => {
+    const now = new Date().toISOString();
+    db()
+      .prepare(
+        `INSERT INTO mailboxes (id, user_id, role, name, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`
+      )
+      .run("mb-list", USER, "archive", "Archive", 5, now);
+    db()
+      .prepare(`INSERT INTO threads (id, user_id, subject_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)`)
+      .run("th-shared", USER, "shared", now, now);
+
+    // Three messages, one conversation, one mailbox.
+    const seeds: [string, string][] = [
+      ["a", "2026-01-01T00:00:00Z"],
+      ["b", "2026-01-02T00:00:00Z"],
+      ["c", "2026-01-03T00:00:00Z"],
+    ];
+    for (const [n, at] of seeds) {
+      db()
+        .prepare(
+          `INSERT INTO messages
+             (id, user_id, thread_id, mailbox_id, from_name, from_email, subject,
+              preview, body_text, body_html, is_draft, is_read, received_at, created_at)
+           VALUES (?, ?, 'th-shared', 'mb-list', NULL, ?, ?, '', '', '', 0, 1, ?, ?)`
+        )
+        .run("m-" + n, USER, "x@example.test", "Message " + n, at, at);
+    }
+
+    const page = mail.queryThreads(USER, { mailboxId: "mb-list", limit: 50, cursor: null });
+    const ids = page.items.map((t) => t.id);
+
+    // Duplicated ids are not merely a React key warning: selection is keyed on
+    // the id, so one tick would select every row sharing it.
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => id === "th-shared")).toHaveLength(1);
+
+    // The row represents the NEWEST message in the thread.
+    const row = page.items.find((t) => t.id === "th-shared")!;
+    expect(row.latest.subject).toBe("Message c");
+    expect(row.messageCount).toBe(3);
+
+    // `total` counts threads, matching the rows. A message count here would
+    // report a total the list can never reach.
+    expect(page.total).toBe(1);
+  });
+});

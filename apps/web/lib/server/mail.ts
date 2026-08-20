@@ -257,11 +257,40 @@ export interface ThreadPage {
 }
 
 /**
+ * Keeps only the newest message of each thread *within the same mailbox*.
+ *
+ * Scoped to `mailbox_id` deliberately. A thread whose newest message sits in
+ * Sent must still appear in Inbox, represented by its newest message there —
+ * an unscoped check would make it vanish from every mailbox but one.
+ *
+ * `NOT EXISTS` rather than `GROUP BY ... MAX()`: SQLite would allow the bare
+ * columns, PostgreSQL would reject them, and this file has to run on both.
+ */
+const NEWEST_IN_THREAD = `NOT EXISTS (
+  SELECT 1 FROM messages newer
+   WHERE newer.thread_id = m.thread_id
+     AND newer.mailbox_id = m.mailbox_id
+     AND newer.user_id = m.user_id
+     AND newer.deleted_at IS NULL
+     AND (newer.received_at > m.received_at
+          OR (newer.received_at = m.received_at AND newer.id > m.id))
+)`;
+
+/**
  * Threads for a mailbox, newest first.
  *
  * Keyset pagination on `(received_at, id)`, not OFFSET: an OFFSET of 50,000
  * makes SQLite walk 50,000 rows, and it silently skips or repeats rows when
  * mail arrives mid-scroll. The cursor is a position, so neither happens.
+ *
+ * ONE ROW PER THREAD. The rows come from `messages`, and each is presented as
+ * its thread, so without `NEWEST_IN_THREAD` two messages of one conversation
+ * in the same mailbox produce two rows carrying the SAME id. That is not just
+ * a duplicate React key: selection is keyed on the id, so ticking one row
+ * would tick both, and a bulk archive would act on more than was chosen.
+ *
+ * It went unnoticed while every draft got a fresh thread of its own. Replying
+ * puts the draft in the conversation it answers, which made it reachable.
  */
 export function queryThreads(userId: string, options: QueryOptions): ThreadPage {
   const { sql, params } = buildWhere(userId, options);
@@ -276,7 +305,7 @@ export function queryThreads(userId: string, options: QueryOptions): ThreadPage 
               (SELECT COUNT(*) FROM messages t WHERE t.thread_id = m.thread_id AND t.deleted_at IS NULL) AS msg_count,
               (SELECT COUNT(*) FROM messages t WHERE t.thread_id = m.thread_id AND t.is_read = 0 AND t.deleted_at IS NULL) AS unread_count
          FROM messages m
-        WHERE ${sql}${cursorClause}
+        WHERE ${sql}${cursorClause} AND ${NEWEST_IN_THREAD}
         ORDER BY m.received_at DESC, m.id DESC
         LIMIT ?`
     )
@@ -285,8 +314,14 @@ export function queryThreads(userId: string, options: QueryOptions): ThreadPage 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
 
+  // Counts threads, matching the rows. Counting messages here would report a
+  // total the list can never reach.
   const total = Number(
-    (db().prepare(`SELECT COUNT(*) AS n FROM messages m WHERE ${sql}`).get(...params) as { n: number }).n
+    (
+      db()
+        .prepare(`SELECT COUNT(*) AS n FROM messages m WHERE ${sql} AND ${NEWEST_IN_THREAD}`)
+        .get(...params) as { n: number }
+    ).n
   );
 
   const last = page[page.length - 1];
