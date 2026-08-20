@@ -22,6 +22,7 @@ const GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = 
       { keys: ["Esc"], label: "Close message" },
       { keys: [","], label: "Toggle sidebar" },
       { keys: ["/"], label: "Focus search" },
+      { keys: ["?"], label: "This list" },
       { keys: ["C"], label: "Compose" },
     ],
   },
@@ -34,6 +35,16 @@ const GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = 
       { keys: ["G", "A"], label: "Archive" },
       { keys: ["G", "T"], label: "Trash" },
       { keys: ["G", "P"], label: "Spam" },
+    ],
+  },
+  {
+    // These three need a conversation open, because they answer the message
+    // being read rather than the one under the cursor.
+    title: "While reading",
+    items: [
+      { keys: ["R"], label: "Reply" },
+      { keys: ["A"], label: "Reply all" },
+      { keys: ["F"], label: "Forward" },
     ],
   },
   {

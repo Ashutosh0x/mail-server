@@ -325,14 +325,25 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         case "u": if (currentId) void act(visible[cursor]!.unreadCount > 0 ? "read" : "unread", [currentId]); event.preventDefault(); break;
         case "g": pendingG = true; break;
         case "c": setComposing(true); event.preventDefault(); break;
+        // Reply, reply-all and forward act on the OPEN conversation, not the
+        // cursor: the reading pane advertises these on its buttons, and a
+        // shortcut that answers a message you are not reading is a way to send
+        // the wrong reply.
+        case "r": if (openThread) { runThreadAction("reply"); event.preventDefault(); } break;
+        case "a": if (openThread) { runThreadAction("replyAll"); event.preventDefault(); } break;
+        case "f": if (openThread) { runThreadAction("forward"); event.preventDefault(); } break;
         case "/": document.getElementById("mail-search")?.focus(); event.preventDefault(); break;
+        // Shift+/ on most layouts, and distinct from "/" because the switch is
+        // on `key` rather than `code`. The reference was previously reachable
+        // only through the profile menu.
+        case "?": setShortcutsOpen(true); event.preventDefault(); break;
         case ",": setSidebarCollapsed((v) => !v); event.preventDefault(); break;
         default: break;
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen, composing]);
+  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen, composing, openThread, runThreadAction]);
 
   if (loading) {
     return (
