@@ -34,7 +34,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
       return fail(404, "session_not_found", "That session no longer exists.");
     }
 
-    audit(auth.user.id, "SESSION_REVOKED", { sessionId: id }, "warning");
+    audit(auth.user.id, "session.revoked", { sessionId: id }, "warning");
     return ok({ revoked: 1 });
   });
 }

@@ -63,7 +63,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     updateProfile(auth.user.id, patch);
-    audit(auth.user.id, "PROFILE_UPDATED", { fields: Object.keys(patch) });
+    audit(auth.user.id, "profile.updated", { fields: Object.keys(patch) });
 
     return ok({ profile: accountProfile(auth.user.id) });
   });

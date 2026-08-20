@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const { token } = createSession(user.id, { ip, userAgent: request.headers.get("user-agent") });
     await setSessionCookie(token);
     db().prepare(`UPDATE users SET last_login_at = ? WHERE id = ?`).run(nowIso(), user.id);
-    audit(user.id, "auth.login", {});
+    audit(user.id, "auth.login", {}, "info", { ip, userAgent: request.headers.get("user-agent") });
 
     return ok({ user: { id: user.id, email: user.email } });
   });

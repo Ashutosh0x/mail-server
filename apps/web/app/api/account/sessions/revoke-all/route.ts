@@ -20,7 +20,7 @@ export async function POST() {
     const keep = await currentSessionId();
     const revoked = revokeOtherSessions(auth.user.id, keep);
 
-    audit(auth.user.id, "SESSION_REVOKED", { scope: "all_other", revoked }, "warning");
+    audit(auth.user.id, "session.revoked", { scope: "all_other", revoked }, "warning");
     return ok({ revoked });
   });
 }

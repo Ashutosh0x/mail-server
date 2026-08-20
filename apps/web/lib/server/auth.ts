@@ -173,16 +173,44 @@ export function revokeAllSessions(userId: string): number {
   return Number(result.changes);
 }
 
+/**
+ * Record a security-relevant event.
+ *
+ * `action` is a machine code and is stored verbatim — the presentation layer
+ * translates it for display. Translating on the way IN would destroy the
+ * structure the audit trail exists to preserve.
+ *
+ * Convention is `namespace.verb`, lowercase. Earlier code wrote some events in
+ * SCREAMING_SNAKE; those rows are real history and are left alone, with the
+ * display layer understanding both forms.
+ *
+ * `context` carries request metadata. The `ip_address` and `user_agent`
+ * columns have existed since the first migration but nothing populated them,
+ * so no event in the security timeline could show a device or an address.
+ * It stays optional because not every call site has a request; an unrecorded
+ * value remains NULL and renders as "Not available", which is the honest
+ * answer rather than a guess.
+ */
 export function audit(
   userId: string | null,
   action: string,
   details: Record<string, unknown> = {},
-  severity: "info" | "warning" | "critical" = "info"
+  severity: "info" | "warning" | "critical" = "info",
+  context: { ip?: string | null; userAgent?: string | null } = {}
 ): void {
   db()
     .prepare(
-      `INSERT INTO audit_logs (id, user_id, action, details, severity, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO audit_logs (id, user_id, action, ip_address, user_agent, details, severity, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(newId(), userId, action, JSON.stringify(details), severity, nowIso());
+    .run(
+      newId(),
+      userId,
+      action,
+      context.ip ?? null,
+      context.userAgent ?? null,
+      JSON.stringify(details),
+      severity,
+      nowIso()
+    );
 }

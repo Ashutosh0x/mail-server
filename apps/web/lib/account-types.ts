@@ -94,10 +94,15 @@ export interface PasskeyRecord {
 
 export interface AuditEntry {
   id: string;
+  /** The machine code, verbatim — the UI translates it for display only. */
   action: string;
   severity: string;
   createdAt: string;
   ipAddress: string | null;
+  /** Null for events recorded before audit() captured request context. */
+  browser: string | null;
+  os: string | null;
+  deviceType: SessionRecord["deviceType"] | null;
 }
 
 /**

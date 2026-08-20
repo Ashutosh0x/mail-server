@@ -19,11 +19,11 @@
 [![MinIO](https://img.shields.io/badge/MinIO-S3-C72E49?style=for-the-badge&logo=minio&logoColor=white)](https://min.io)
 [![Rspamd](https://img.shields.io/badge/Rspamd-4.1-2E7D32?style=for-the-badge&logo=maildotcom&logoColor=white)](https://rspamd.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![Vitest](https://img.shields.io/badge/Vitest-194_passing-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
+[![Vitest](https://img.shields.io/badge/Vitest-213_passing-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](#license)
 [![Typecheck](https://img.shields.io/badge/typecheck-3%2F3-success?style=flat-square)](#verification)
-[![Tests](https://img.shields.io/badge/tests-194_passing-success?style=flat-square)](#verification)
+[![Tests](https://img.shields.io/badge/tests-213_passing-success?style=flat-square)](#verification)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-NOT_MEASURED-lightgrey?style=flat-square)](docs/adr/0006-benchmark-methodology.md)
 
 </div>
@@ -55,7 +55,7 @@ Node 22+ is the entire requirement. The database is SQLite through
 
 ```bash
 npm install
-npm test                                   # 194 tests across four packages
+npm test                                   # 213 tests across four packages
 npm --workspace @mailserver/web run dev    # http://localhost:3000
 ```
 
@@ -93,7 +93,7 @@ roadmap entirely. See [ADR-0002](docs/adr/0002-calendar-architecture.md),
 | `packages/types` | Domain contract, search grammar, storage federation, connector contract | **built · 57 tests** |
 | `packages/ui` | OKLCH design tokens, icon registry, motion and haptic systems | **built · 33 tests** |
 | `packages/database` | Postgres migrations, SQLite dev schema, migration runner | **built · 10 tests** |
-| `apps/web` | Webmail client, account center, storage providers, 25 API routes | **built · 94 tests** |
+| `apps/web` | Webmail client, security center, storage providers, 25 API routes | **built · 113 tests** |
 | `benchmarks/` | Scenario definitions | **no results — nothing has been run** |
 | `infrastructure/` | Compose, Stalwart and Rspamd config | scaffold, **never executed** |
 | `services/api` | Rust/Axum gateway | not started |
@@ -164,7 +164,7 @@ call stacks). Verified 2026-08-20: the production client bundle contains zero
 
 ```
 turbo typecheck    3 successful, 3 total
-turbo test         194 passing — types 57 · ui 33 · database 10 · web 94
+turbo test         213 passing — types 57 · ui 33 · database 10 · web 113
 next build         compiled successfully
 ```
 

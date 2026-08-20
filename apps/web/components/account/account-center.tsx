@@ -12,7 +12,8 @@ import type {
   SessionRecord,
 } from "@/lib/account-types";
 import { Avatar } from "./avatar";
-import { SecurityChecklist } from "./security-status";
+import { SecurityCenter } from "./security-center";
+import { SettingsSkeleton } from "../interaction/skeleton";
 import { StorageUsage } from "./storage-usage";
 import { useMotion } from "@/lib/motion-preference";
 
@@ -82,7 +83,7 @@ export function AccountCenter({
           ref={closeRef}
           type="button"
           onClick={onClose}
-          className="rounded-md p-1.5 text-ink-secondary hover:bg-surface-sunken hover:text-ink"
+          className="rounded-md p-1.5 text-ink-secondary hover:bg-surface-sunken hover:text-ink pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:p-3"
         >
           <Icon icon={icons.chrome.close} size="md" label="Close account settings" />
         </button>
@@ -350,81 +351,58 @@ function SecuritySection() {
     sessions: SessionRecord[];
     activity: AuditEntry[];
   }>(() => api.security());
+  const [refreshing, setRefreshing] = useState(false);
 
-  if (loading) return <Loading />;
-  if (error) return <Failed message={error} onRetry={reload} />;
+  // Background refresh: the existing content stays on screen while the new
+  // data is fetched, so acting on a session does not blank the page.
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await reload();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [reload]);
+
+  if (loading && !data) return <SecuritySkeleton />;
+  if (error && !data) return <Failed message={error} onRetry={reload} />;
   if (!data) return null;
 
   return (
-    <>
-      <SectionHeading
-        title="Security"
-        description="What protects this account, and what has recently happened to it."
-      />
-
-      <Card className="mb-4">
-        <SecurityChecklist posture={data.posture} />
-      </Card>
-
-      <div className="mb-4 space-y-3">
-        <NotBuilt
-          title="Passkeys"
-          reason="Registering a passkey needs a full WebAuthn ceremony — a server challenge, attestation parsing, and origin verification. None of it exists yet, so no passkey can be added. Existing passkeys can still be revoked."
-        />
-        <NotBuilt
-          title="Two-factor authentication"
-          reason="TOTP enrolment is not built. The database column exists, but nothing can set it."
-        />
-        <NotBuilt
-          title="Recovery codes"
-          reason="There is no recovery-code storage, so this cannot be enabled."
-        />
-      </div>
-
-      <Card>
-        <h3 className="mb-3 text-sm font-medium text-ink">Recent activity</h3>
-        {data.activity.length === 0 ? (
-          <p className="text-sm text-ink-muted">Nothing recorded yet.</p>
-        ) : (
-          <ul className="space-y-2.5">
-            {data.activity.map((entry) => (
-              <li key={entry.id} className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="min-w-0">
-                  <span className="block truncate text-ink">{humanAction(entry.action)}</span>
-                  {entry.ipAddress && (
-                    <span className="block font-mono text-xs text-ink-muted">{entry.ipAddress}</span>
-                  )}
-                </span>
-                <span className="shrink-0 text-xs text-ink-muted">
-                  {new Date(entry.createdAt).toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </>
+    <SecurityCenter
+      posture={data.posture}
+      sessions={data.sessions}
+      activity={data.activity}
+      onRefresh={refresh}
+      refreshing={refreshing}
+    />
   );
 }
 
-/** Audit actions are stored as stable machine codes; this is the display layer. */
-function humanAction(action: string): string {
-  const known: Record<string, string> = {
-    PROFILE_UPDATED: "Profile updated",
-    PASSWORD_CHANGED: "Password changed",
-    PASSKEY_CREATED: "Passkey added",
-    PASSKEY_REVOKED: "Passkey revoked",
-    MFA_ENABLED: "Two-factor enabled",
-    MFA_DISABLED: "Two-factor disabled",
-    SESSION_CREATED: "Signed in",
-    SESSION_REVOKED: "Session revoked",
-    ACCOUNT_SIGNED_OUT: "Signed out",
-  };
-  // Unknown codes are shown as themselves rather than hidden — an audit trail
-  // that silently drops events it does not recognise is not an audit trail.
-  return known[action] ?? action;
+/** Mirrors the real layout, so nothing shifts when the data lands. */
+function SecuritySkeleton() {
+  return (
+    <>
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold text-ink">Security</h2>
+        <p className="mt-0.5 text-sm text-ink-secondary">
+          Protect your account and monitor important security activity.
+        </p>
+      </div>
+      <div className="mb-4 rounded-xl border border-border bg-surface p-5">
+        <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+          <div className="size-[104px] shrink-0 animate-pulse rounded-full bg-surface-sunken" />
+          <div className="w-full flex-1 space-y-2">
+            <div className="h-6 w-32 animate-pulse rounded-full bg-surface-sunken" />
+            <div className="h-3 w-full animate-pulse rounded bg-surface-sunken" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-surface-sunken" />
+          </div>
+        </div>
+      </div>
+      <SettingsSkeleton rows={4} />
+    </>
+  );
 }
-
 // ── Devices ────────────────────────────────────────────────────────────────
 
 function DevicesSection() {

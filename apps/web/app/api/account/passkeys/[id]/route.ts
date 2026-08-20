@@ -22,7 +22,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
       return fail(404, "passkey_not_found", "That passkey no longer exists.");
     }
 
-    audit(auth.user.id, "PASSKEY_REVOKED", { passkeyId: id }, "warning");
+    audit(auth.user.id, "passkey.revoked", { passkeyId: id }, "warning");
     return ok({ revoked: 1 });
   });
 }

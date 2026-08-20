@@ -1,7 +1,7 @@
 # Architecture status
 
 **Last updated:** 2026-08-20
-**Baseline:** `turbo typecheck` 3/3 · `turbo test` 194 passing · `next build` clean
+**Baseline:** `turbo typecheck` 3/3 · `turbo test` 213 passing · `next build` clean
 
 This is the single source of truth for what exists. It supersedes every status
 claim in the original planning blueprints. Where this file and a blueprint

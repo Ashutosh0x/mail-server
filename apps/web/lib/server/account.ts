@@ -416,25 +416,40 @@ export function revokePasskey(userId: string, passkeyId: string): boolean {
 
 export interface AuditEntry {
   id: string;
+  /** The machine code, verbatim. Never translated on the way out of the DB. */
   action: string;
   severity: string;
   createdAt: string;
   ipAddress: string | null;
+  /** Null for any event recorded before audit() captured request context. */
+  browser: string | null;
+  os: string | null;
+  deviceType: DeviceType | null;
 }
 
 export function recentAudit(userId: string, limit = 20): AuditEntry[] {
   const rows = db()
     .prepare(
-      `SELECT id, action, severity, created_at, ip_address FROM audit_logs
+      `SELECT id, action, severity, created_at, ip_address, user_agent FROM audit_logs
         WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
     )
     .all(userId, Math.min(limit, 100)) as Record<string, unknown>[];
 
-  return rows.map((row) => ({
-    id: row.id as string,
-    action: row.action as string,
-    severity: row.severity as string,
-    createdAt: row.created_at as string,
-    ipAddress: (row.ip_address as string | null) ?? null,
-  }));
+  return rows.map((row) => {
+    const ua = (row.user_agent as string | null) ?? null;
+    // Only describe a device when one was actually recorded. Every event
+    // written before audit() captured request context has none, and the UI
+    // shows "Not available" rather than inventing a plausible browser.
+    const described = ua ? describeUserAgent(ua) : null;
+    return {
+      id: row.id as string,
+      action: row.action as string,
+      severity: row.severity as string,
+      createdAt: row.created_at as string,
+      ipAddress: (row.ip_address as string | null) ?? null,
+      browser: described?.browser ?? null,
+      os: described?.os ?? null,
+      deviceType: described?.deviceType ?? null,
+    };
+  });
 }

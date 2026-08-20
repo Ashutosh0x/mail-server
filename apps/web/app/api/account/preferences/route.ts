@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest) {
 
     // Recorded because privacy choices are security-relevant, but the values
     // themselves are not logged — what a user chose to share is their business.
-    audit(auth.user.id, "PROFILE_UPDATED", {
+    audit(auth.user.id, "preferences.updated", {
       sections: Object.keys(body as Record<string, unknown>),
     });
 
