@@ -1,4 +1,8 @@
+import type { NextRequest } from "next/server";
 import { listPasskeys } from "@/lib/server/account";
+import { finishRegistration } from "@/lib/server/webauthn";
+import { audit } from "@/lib/server/auth";
+import { isHeaderSafe } from "@/lib/server/validate";
 import { guard, ok, fail, requireUser } from "@/lib/server/http";
 
 export const runtime = "nodejs";
@@ -20,22 +24,42 @@ export async function GET() {
 }
 
 /**
- * POST /api/account/passkeys — not implemented.
+ * POST /api/account/passkeys — finish registering a passkey.
  *
- * Registration is a WebAuthn ceremony: a server-issued challenge, an
- * attestation the client returns, CBOR/COSE parsing, origin and RP-ID
- * verification, and a sign-count check on every later assertion. None of that
- * exists. Writing a row here without it would produce a passkey that cannot
- * authenticate anyone, listed on a security screen as though it protects them.
+ * The attestation is verified against the challenge THIS server issued to
+ * THIS user, and the challenge is consumed in the process so the same
+ * response cannot be replayed.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   return guard(async () => {
     const auth = await requireUser();
     if (!auth.ok) return auth.response;
-    return fail(
-      501,
-      "webauthn_not_implemented",
-      "Adding a passkey needs WebAuthn registration, which is not built yet."
-    );
+
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body.response !== "object" || body.response === null) {
+      return fail(400, "invalid_body", "Send the authenticator response.");
+    }
+
+    // A name the user will recognise later. Trimmed and bounded, and never
+    // rendered as anything but text.
+    const raw = typeof body.name === "string" ? body.name.trim() : "";
+    const name = raw.length > 0 && raw.length <= 60 ? raw : "Passkey";
+    if (!isHeaderSafe(name)) {
+      return fail(400, "invalid_name", "That name contains characters that are not allowed.");
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await finishRegistration(auth.user.id, body.response as any, name);
+    if (!result.ok) {
+      const malformed = result.reason.includes("malformed");
+      return fail(400, malformed ? "invalid_body" : "passkey_rejected", result.reason);
+    }
+
+    audit(auth.user.id, "passkey.created", { passkeyId: result.id }, "warning", {
+      ip: request.headers.get("x-forwarded-for"),
+      userAgent: request.headers.get("user-agent"),
+    });
+
+    return ok({ passkeys: listPasskeys(auth.user.id) }, 201);
   });
 }

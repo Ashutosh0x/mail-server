@@ -391,6 +391,13 @@ CREATE TABLE IF NOT EXISTS passkeys (
   name            TEXT NOT NULL,
   sign_count      INTEGER NOT NULL DEFAULT 0,
   transports      TEXT NOT NULL DEFAULT '[]',
+  -- From the authenticator's own flags. A multi-device (synced) passkey
+  -- lives in a keychain and survives losing the device; a single-device one
+  -- does not. Telling them apart is what lets the UI warn someone that
+  -- their only passkey disappears with their laptop.
+  backed_up       INTEGER NOT NULL DEFAULT 0,
+  device_type     TEXT NOT NULL DEFAULT 'singleDevice'
+                    CHECK (device_type IN ('singleDevice', 'multiDevice')),
   created_at      TEXT NOT NULL,
   last_used_at    TEXT
 );
@@ -472,3 +479,24 @@ CREATE TABLE IF NOT EXISTS storage_sync_states (
   items_indexed   INTEGER NOT NULL DEFAULT 0,
   updated_at      TEXT NOT NULL
 );
+
+-- ── WebAuthn challenges ───────────────────────────────────────────────────
+--
+-- The server's proof that a ceremony is fresh. The authenticator signs the
+-- challenge and the server checks that what came back is the value IT issued,
+-- once, recently. Without server-side storage there is nothing to compare
+-- against and a captured assertion replays forever.
+
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id              TEXT PRIMARY KEY,
+  -- Null for an authentication challenge issued before we know who is
+  -- signing in. Set for registration, which happens inside a session.
+  user_id         TEXT REFERENCES users(id) ON DELETE CASCADE,
+  challenge       TEXT NOT NULL UNIQUE,
+  purpose         TEXT NOT NULL CHECK (purpose IN ('registration', 'authentication')),
+  -- Short. A challenge that lives for an hour is an hour-long replay window.
+  expires_at      TEXT NOT NULL,
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS webauthn_challenges_expiry_idx ON webauthn_challenges(expires_at);
+CREATE INDEX IF NOT EXISTS webauthn_challenges_user_idx ON webauthn_challenges(user_id);

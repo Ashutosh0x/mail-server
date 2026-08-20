@@ -1,7 +1,7 @@
 # Architecture status
 
 **Last updated:** 2026-08-20
-**Baseline:** `turbo typecheck` 3/3 · `turbo test` 213 passing · `next build` clean
+**Baseline:** `turbo typecheck` 3/3 · `turbo test` 226 passing · `next build` clean
 
 This is the single source of truth for what exists. It supersedes every status
 claim in the original planning blueprints. Where this file and a blueprint
@@ -56,6 +56,7 @@ therefore `VERIFIED` **upstream** and `BLOCKED` locally, and both are shown.
 | **Chat** | `PLANNED` | No code | After Admin |
 | **Search** | `IMPLEMENTED` (mail only) | Grammar in `packages/types/src/search.ts`, 46 tests; translated to bound SQL in `lib/server/mail.ts` | Extend to Drive and federated items |
 | **Identity / auth** | `IMPLEMENTED` | scrypt (N=2^15, r=8, p=1), SHA-256 session tokens, `secure` cookies in production | Add MFA, OIDC |
+| **Passkeys / WebAuthn** | `IMPLEMENTED` | Registration and sign-in, verified end to end against Chrome’s virtual authenticator; single-use challenges, clone detection via sign count | Recovery codes so a lost passkey is not a lockout |
 | **Admin** | `PLANNED` | No app under `apps/admin` | After mail transport |
 | **Backup** | `PLANNED` | None | Evaluate Vandelay (ADR-0007) |
 | **Migration** | `PLANNED` — **rearchitected** | Stalwart ships Vandelay | Delegate; build only the adapter (ADR-0007) |

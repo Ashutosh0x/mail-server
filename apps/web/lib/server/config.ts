@@ -96,6 +96,24 @@ export const config = {
     from: process.env.SMTP_FROM ?? null,
   },
 
+  /**
+   * WebAuthn relying party.
+   *
+   * `rpId` is the registrable domain a passkey is bound to — never a URL and
+   * never a port. That binding is what makes a passkey unphishable: a
+   * credential for `localhost` simply will not work on another origin, so a
+   * lookalike site cannot collect one.
+   *
+   * Origins are listed exactly rather than pattern-matched, because an origin
+   * check that accepts a wildcard is not a check.
+   */
+  webauthnRpId: process.env.WEBAUTHN_RP_ID ?? "localhost",
+  webauthnRpName: process.env.WEBAUTHN_RP_NAME ?? "Mail Server",
+  webauthnOrigins: (process.env.WEBAUTHN_ORIGINS ?? "http://localhost:3000")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
   isProduction: process.env.NODE_ENV === "production",
 } as const;
 

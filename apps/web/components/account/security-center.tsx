@@ -13,6 +13,7 @@ import {
   type EventCategory,
 } from "@/lib/security-events";
 import { useMotion } from "@/lib/motion-preference";
+import { PasskeyManager } from "./passkey-manager";
 
 /**
  * The Security Center.
@@ -105,9 +106,9 @@ const CHECK_COPY: Record<string, { title: string; blurb: string; learn: string }
   },
   passkey: {
     title: "Passkeys",
-    blurb: "Passkeys aren't available yet. We're preparing passwordless sign-in.",
+    blurb: "Sign in with your fingerprint, face or device PIN.",
     learn:
-      "Passkeys replace a password with a key held by your device and unlocked by your fingerprint, face or PIN. They cannot be phished or reused across sites. Registration requires WebAuthn, which is not currently available.",
+      "Passkeys replace a password with a key held by your device and unlocked by your fingerprint, face or PIN. The private key never leaves the device, and a passkey only works on the site it was created for, so it cannot be phished or reused.",
   },
   mfa: {
     title: "Two-factor authentication",
@@ -167,7 +168,7 @@ export function SecurityCenter({
       </div>
 
       <SecurityOverview posture={posture} />
-      <AuthenticationSection posture={posture} />
+      <AuthenticationSection posture={posture} onChanged={onRefresh} />
       <RecommendedSteps posture={posture} />
       <SessionsSection sessions={sessions} onChanged={onRefresh} />
       <ActivitySection activity={activity} onOpen={setDetail} />
@@ -276,7 +277,13 @@ function SecurityOverview({ posture }: { posture: SecurityPosture }) {
 
 // ── Authentication checks ──────────────────────────────────────────────────
 
-function AuthenticationSection({ posture }: { posture: SecurityPosture }) {
+function AuthenticationSection({
+  posture,
+  onChanged,
+}: {
+  posture: SecurityPosture;
+  onChanged: () => Promise<void>;
+}) {
   return (
     <section className="mb-4" aria-labelledby="authentication-heading">
       <h3 id="authentication-heading" className="mb-2 text-sm font-semibold text-ink">
@@ -285,7 +292,9 @@ function AuthenticationSection({ posture }: { posture: SecurityPosture }) {
       <ul className="space-y-2">
         {posture.checks.map((check) => (
           <li key={check.id}>
-            <CheckCard check={check} />
+            {/* Passkeys have a real enrolment flow now, so the card is
+                replaced by the working control rather than a status line. */}
+            {check.id === "passkey" ? <PasskeyManager onChanged={onChanged} /> : <CheckCard check={check} />}
           </li>
         ))}
       </ul>
@@ -353,10 +362,10 @@ function CheckCard({ check }: { check: SecurityCheck }) {
  * we built the flow. Deriving one from the other told the user a protection
  * was "Available now" while the card above it said it was not.
  *
- * Empty today. Adding an id here is the single edit that turns a step
- * actionable when the backend gains the capability.
+ * `passkey` is here because WebAuthn registration now works. Adding an id is
+ * the single edit that turns a step actionable when its backend lands.
  */
-const ENROLMENT_AVAILABLE = new Set<string>();
+const ENROLMENT_AVAILABLE = new Set<string>(["passkey"]);
 
 function RecommendedSteps({ posture }: { posture: SecurityPosture }) {
   const steps = posture.checks.filter((c) => c.state !== "satisfied");

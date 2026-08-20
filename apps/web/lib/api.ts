@@ -1,5 +1,11 @@
 import type { Label, Mailbox, Thread } from "@mailserver/types";
 import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+} from "@simplewebauthn/browser";
+import type {
   AccountOverview,
   AccountProfile,
   AuditEntry,
@@ -188,6 +194,32 @@ export const api = {
     }),
 
   passkeys: () => request<{ passkeys: PasskeyRecord[] }>("/api/account/passkeys"),
+
+  /** Server-issued registration options. Consumed by startRegistration(). */
+  passkeyRegisterChallenge: () =>
+    request<{ options: PublicKeyCredentialCreationOptionsJSON }>(
+      "/api/account/passkeys/challenge",
+      { method: "POST" }
+    ),
+
+  passkeyRegister: (response: RegistrationResponseJSON, name: string) =>
+    request<{ passkeys: PasskeyRecord[] }>("/api/account/passkeys", {
+      method: "POST",
+      body: JSON.stringify({ response, name }),
+    }),
+
+  /** `email` is optional — omitting it uses a discoverable credential. */
+  passkeyLoginChallenge: (email?: string) =>
+    request<{ options: PublicKeyCredentialRequestOptionsJSON }>("/api/auth/passkey/challenge", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  passkeyLogin: (response: AuthenticationResponseJSON) =>
+    request<{ user: { id: string } }>("/api/auth/passkey", {
+      method: "POST",
+      body: JSON.stringify(response),
+    }),
 
   revokePasskey: (id: string) =>
     request<{ revoked: number }>(`/api/account/passkeys/${encodeURIComponent(id)}`, {

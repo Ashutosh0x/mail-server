@@ -17,8 +17,19 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    // `suppressHydrationWarning` on <html> and <body> only.
+    //
+    // Browser extensions inject attributes into these two elements before React
+    // hydrates — ColorZilla adds `cz-shortcut-listen`, password managers and
+    // dark-mode extensions add their own. The server cannot know about them, so
+    // React reports a mismatch for markup we never wrote and cannot control.
+    //
+    // The suppression is deliberately narrow: it covers the element's own
+    // attributes and text, NOT its children, so a genuine hydration mismatch
+    // anywhere inside the app is still reported. Applying it any wider would
+    // hide real bugs.
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
