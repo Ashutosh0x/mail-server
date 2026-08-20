@@ -821,101 +821,121 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
           )}
         </div>
 
-        <footer className="flex items-center gap-4 border-t border-border bg-surface px-4 py-1.5 text-xs text-ink-muted">
-          <span>
-            {total} conversation{total === 1 ? "" : "s"}
-            {selected.size > 0 && ` · ${selected.size} selected`}
-          </span>
-          {nextCursor && (
+        {/*
+          Two different bars, not one bar with extra items squeezed in.
+
+          The status version is 12px text: a count, a Load more link and the
+          keyboard hints. Putting Delete in among those made it LOOK like
+          status — it rendered, it was clickable, and it read as a caption
+          rather than an action, which is worse than being absent because
+          the user concludes the feature is missing.
+
+          So a selection replaces the bar outright with a real toolbar:
+          taller, normal-sized text, and buttons that look like buttons.
+        */}
+        {selected.size > 0 ? (
+          <div
+            role="toolbar"
+            aria-label={`Actions for ${selected.size} selected conversation${selected.size === 1 ? "" : "s"}`}
+            className="flex flex-wrap items-center gap-2 border-t border-border bg-surface-raised px-4 py-2"
+          >
+            <span className="mr-1 text-sm font-medium text-ink">
+              {selected.size} conversation{selected.size === 1 ? "" : "s"} selected
+            </span>
+
+            {mailboxActions
+              .filter((action) => action.primary)
+              .map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={() => void act(action.operation, selectedMessageIds)}
+                  className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  {action.label}
+                </button>
+              ))}
+
+            {/* Always visible, never behind More: it is the action people
+                came to the toolbar for. Styled as destructive so it cannot
+                be mistaken for another neutral control. */}
             <button
               type="button"
-              onClick={() => void loadMore()}
-              disabled={loadingMore}
-              className="rounded border border-border px-2 py-0.5 font-medium text-ink hover:bg-surface-sunken disabled:opacity-60"
+              onClick={runDelete}
+              title={deletePolicy.confirm ? "This cannot be undone" : "Move to Trash"}
+              className="rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger"
             >
-              {loadingMore ? "Loading…" : "Load more"}
+              {deletePolicy.label}
             </button>
-          )}
-          {selected.size > 0 && (
-            <span className="flex items-center gap-1">
-              {mailboxActions
-                .filter((action) => action.primary)
-                .map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
-                    onClick={() => void act(action.operation, selectedMessageIds)}
-                    className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink"
-                  >
-                    {action.label}
-                  </button>
-                ))}
 
-              <button
-                type="button"
-                onClick={runDelete}
-                title={deletePolicy.confirm ? "This cannot be undone" : "Move to Trash"}
-                className={cn(
-                  "rounded px-2 py-0.5 hover:bg-surface-sunken",
-                  deletePolicy.confirm ? "text-danger hover:bg-danger-muted" : "hover:text-ink"
+            {mailboxActions.some((action) => !action.primary) && (
+              <span className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((open) => !open)}
+                  aria-expanded={moreOpen}
+                  aria-haspopup="menu"
+                  className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  More
+                </button>
+                {moreOpen && (
+                  <span
+                    role="menu"
+                    className="absolute bottom-full right-0 z-30 mb-1 flex min-w-40 flex-col rounded-lg border border-border bg-surface-raised p-1 shadow-lg"
+                  >
+                    {mailboxActions
+                      .filter((action) => !action.primary)
+                      .map((action) => (
+                        <button
+                          key={action.id}
+                          role="menuitem"
+                          type="button"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            void act(action.operation, selectedMessageIds);
+                          }}
+                          className="rounded px-2 py-1.5 text-left text-sm text-ink-secondary hover:bg-surface-sunken hover:text-ink"
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                  </span>
                 )}
-              >
-                {deletePolicy.label}
-              </button>
+              </span>
+            )}
 
-              {mailboxActions.some((action) => !action.primary) && (
-                <span className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setMoreOpen((open) => !open)}
-                    aria-expanded={moreOpen}
-                    aria-haspopup="menu"
-                    className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink"
-                  >
-                    More
-                  </button>
-                  {moreOpen && (
-                    <span
-                      role="menu"
-                      className="absolute bottom-full right-0 z-20 mb-1 flex min-w-36 flex-col rounded-lg border border-border bg-surface-raised p-1 shadow-lg"
-                    >
-                      {mailboxActions
-                        .filter((action) => !action.primary)
-                        .map((action) => (
-                          <button
-                            key={action.id}
-                            role="menuitem"
-                            type="button"
-                            onClick={() => {
-                              setMoreOpen(false);
-                              void act(action.operation, selectedMessageIds);
-                            }}
-                            className="rounded px-2 py-1 text-left text-ink-secondary hover:bg-surface-sunken hover:text-ink"
-                          >
-                            {action.label}
-                          </button>
-                        ))}
-                    </span>
-                  )}
-                </span>
-              )}
-
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-sunken hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              Clear selection
+            </button>
+          </div>
+        ) : (
+          <footer className="flex items-center gap-4 border-t border-border bg-surface px-4 py-1.5 text-xs text-ink-muted">
+            <span>
+              {total} conversation{total === 1 ? "" : "s"}
+            </span>
+            {nextCursor && (
               <button
                 type="button"
-                onClick={() => setSelected(new Set())}
-                className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+                className="rounded border border-border px-2 py-0.5 font-medium text-ink hover:bg-surface-sunken disabled:opacity-60"
               >
-                Clear
+                {loadingMore ? "Loading…" : "Load more"}
               </button>
+            )}
+            <span className="ml-auto flex items-center gap-3">
+              <span><Key>J</Key><Key>K</Key> move</span>
+              <span><Key>E</Key> archive</span>
+              <span><Key>S</Key> star</span>
+              <span><Key>/</Key> search</span>
             </span>
-          )}
-          <span className="ml-auto flex items-center gap-3">
-            <span><Key>J</Key><Key>K</Key> move</span>
-            <span><Key>E</Key> archive</span>
-            <span><Key>S</Key> star</span>
-            <span><Key>/</Key> search</span>
-          </span>
-        </footer>
+          </footer>
+        )}
       </div>
 
       {accountSection !== null && (

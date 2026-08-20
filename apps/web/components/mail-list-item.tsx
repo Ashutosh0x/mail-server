@@ -76,8 +76,14 @@ export function MailListItem({
           haptics.selection();
           onToggleSelect();
         }}
+        // role="checkbox" with aria-checked, not a bare button: the control
+        // has a checked STATE, and a button announces only its label. A
+        // screen-reader user was told "Select subject, button" with no way to
+        // know whether it already was selected.
+        role="checkbox"
+        aria-checked={selected}
         aria-label={selected ? `Deselect ${latest.subject}` : `Select ${latest.subject}`}
-        className="shrink-0 text-ink-muted transition-transform duration-[--duration-instant] hover:text-ink active:scale-90"
+        className="shrink-0 rounded text-ink-muted transition-transform duration-[--duration-instant] hover:text-ink active:scale-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
         <Icon icon={selected ? icons.messageState.checkboxOn : icons.messageState.checkboxOff} size="sm" />
       </button>

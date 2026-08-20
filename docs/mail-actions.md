@@ -76,6 +76,25 @@ bytes it checks whether another attachment row references the same
 dedup exists today so this cannot trigger, but it is what keeps the invariant
 true if content-addressed storage is ever added.
 
+## The selection toolbar
+
+A selection **replaces** the status bar rather than adding items to it.
+
+That distinction was a real defect, not a style preference. The Delete button
+originally sat in the 12px status bar beside the conversation count and the
+keyboard hints. It rendered, it was clickable, and a hit test at its centre
+passed — but at 73x20px among captions it *read* as status rather than as an
+action, and the reasonable conclusion was that the feature was missing. A
+control that is technically present and perceptually absent is not implemented.
+
+With a selection, the bar becomes `role="toolbar"`: normal-sized text, buttons
+that look like buttons, and Delete styled as destructive at 94x32. Delete is
+never behind More — it is the action people opened the toolbar for.
+
+The row's select control carries `role="checkbox"` and `aria-checked`, not a
+bare button. A button announces only its label, so a screen-reader user heard
+"Select subject, button" with no way to know whether it was already selected.
+
 ## Selection
 
 Select-all covers **the current page only**, and says so. "Select all in Inbox"
