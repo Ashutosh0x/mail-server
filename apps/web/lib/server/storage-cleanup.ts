@@ -193,6 +193,27 @@ export async function deleteAttachments(userId: string, ids: string[]): Promise<
       continue;
     }
 
+    // Never destroy bytes another row still points at. Uploads currently get
+    // their own key, so this cannot happen today — but the guard is what keeps
+    // it true if content-addressed dedup is ever added, and discovering that
+    // by losing one message's attachment when another is deleted would be an
+    // expensive way to learn it.
+    const sharing = db()
+      .prepare(`SELECT COUNT(*) AS n FROM attachments WHERE storage_key = ? AND id <> ?`)
+      .get(row.storage_key, id) as { n: number };
+
+    if (Number(sharing.n) > 0) {
+      // The record goes; the blob stays, because something else needs it.
+      const detached = db()
+        .prepare(`DELETE FROM attachments WHERE id = ? AND user_id = ?`)
+        .run(id, userId);
+      if (Number(detached.changes) > 0) {
+        outcome.deleted += 1;
+        // No bytes were reclaimed: the file is still there for the other row.
+      }
+      continue;
+    }
+
     try {
       await storage().delete(row.storage_key);
     } catch (cause) {

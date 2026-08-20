@@ -16,6 +16,7 @@ import { ProfileMenu } from "./account/profile-menu";
 import { AccountCenter, type AccountSection } from "./account/account-center";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { Composer } from "./compose/composer";
+import { actionsFor, deletePolicyFor, type SelectionAction } from "./mail-selection";
 import { StoragePage } from "./storage/storage-page";
 
 const DENSITIES = [
@@ -303,6 +304,13 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
       optimistic?.();
       try {
         const result = await api.act(action, ids);
+
+        // The selection pointed at rows that have just moved or gone. Leaving
+        // it in place means the next action silently targets messages the user
+        // can no longer see, which is how a second click deletes the wrong
+        // thing.
+        setSelected(new Set());
+
         await Promise.all([loadFolders(), loadThreads(activeMailboxId, debouncedQuery)]);
 
         const inverse = INVERSE_ACTION[action];
@@ -399,6 +407,33 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
 
   const visible = threads ?? [];
 
+  /** Message ids for the current selection, in list order. */
+  const selectedMessageIds = visible
+    .filter((thread) => selected.has(thread.id))
+    .map((thread) => thread.latest.id);
+
+  const deletePolicy = deletePolicyFor(activeMailbox?.role ?? null, selected.size);
+  const mailboxActions = actionsFor(activeMailbox?.role ?? null);
+
+  /** Set while a permanent deletion is waiting to be confirmed. */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  /**
+   * Delete, meaning whatever delete means in THIS mailbox.
+   *
+   * Reversible everywhere a Trash exists to receive it; permanent in
+   * Trash, Spam and Drafts, and confirmed there before anything happens.
+   */
+  const runDelete = useCallback(() => {
+    if (selectedMessageIds.length === 0) return;
+    if (deletePolicy.confirm) {
+      setConfirmingDelete(true);
+      return;
+    }
+    void act(deletePolicy.operation, selectedMessageIds);
+  }, [selectedMessageIds, deletePolicy, act]);
+
   const toggleSet = (set: Set<string>, id: string) => {
     const next = new Set(set);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -459,8 +494,18 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         // a bulk selection ends up uniform instead of each row flipping.
         case "I": if (targetIds.length) void act("read", targetIds); event.preventDefault(); break;
         case "U": if (targetIds.length) void act("unread", targetIds); event.preventDefault(); break;
+        // Same policy as the button: reversible where a Trash can receive it,
+        // confirmed where it cannot. A shortcut must not be the one path that
+        // destroys mail without asking.
         case "Delete":
-        case "Backspace": if (targetIds.length) void act("trash", targetIds); event.preventDefault(); break;
+        case "Backspace":
+          if (targetIds.length) {
+            const policy = deletePolicyFor(activeMailbox?.role ?? null, targetIds.length);
+            if (policy.confirm) setConfirmingDelete(true);
+            else void act(policy.operation, targetIds);
+          }
+          event.preventDefault();
+          break;
         case "g": pendingG = true; break;
         case "c": setComposing(true); event.preventDefault(); break;
         // Reply, reply-all and forward act on the OPEN conversation, not the
@@ -651,6 +696,47 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
             aria-busy={listLoading}
             className="flex w-full shrink-0 flex-col overflow-y-auto border-r border-border bg-canvas md:w-[420px]"
           >
+            {/*
+              Select-all covers THIS PAGE only, and says so. "Select all in
+              Inbox" would be a different promise — one that reaches rows the
+              user has never seen — and conflating them is how a bulk delete
+              takes more than was intended.
+            */}
+            {visible.length > 0 && (
+              <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-surface px-4 py-1.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="size-4"
+                  checked={selected.size > 0 && selected.size === visible.length}
+                  ref={(node) => {
+                    // Indeterminate is a DOM property, not an attribute, so it
+                    // cannot be set through JSX.
+                    if (node) node.indeterminate = selected.size > 0 && selected.size < visible.length;
+                  }}
+                  onChange={(event) =>
+                    setSelected(
+                      event.target.checked ? new Set(visible.map((thread) => thread.id)) : new Set()
+                    )
+                  }
+                  aria-label={
+                    selected.size === visible.length
+                      ? "Clear selection"
+                      : `Select all ${visible.length} conversations on this page`
+                  }
+                />
+                <span className="text-ink-muted">
+                  {selected.size > 0
+                    ? `${selected.size} selected on this page`
+                    : `Select all ${visible.length} on this page`}
+                </span>
+                {selected.size > 0 && nextCursor && (
+                  <span className="text-ink-muted">
+                    · more conversations exist beyond this page and are not selected
+                  </span>
+                )}
+              </div>
+            )}
+
             {listLoading && visible.length === 0 ? (
               <MailListSkeleton density={density} rows={8} />
             ) : visible.length === 0 ? (
@@ -752,12 +838,75 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
           )}
           {selected.size > 0 && (
             <span className="flex items-center gap-1">
-              <button type="button" onClick={() => void act("archive", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}
-                      className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink">Archive</button>
-              <button type="button" onClick={() => void act("trash", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}
-                      className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink">Delete</button>
-              <button type="button" onClick={() => void act("read", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}
-                      className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink">Mark read</button>
+              {mailboxActions
+                .filter((action) => action.primary)
+                .map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => void act(action.operation, selectedMessageIds)}
+                    className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink"
+                  >
+                    {action.label}
+                  </button>
+                ))}
+
+              <button
+                type="button"
+                onClick={runDelete}
+                title={deletePolicy.confirm ? "This cannot be undone" : "Move to Trash"}
+                className={cn(
+                  "rounded px-2 py-0.5 hover:bg-surface-sunken",
+                  deletePolicy.confirm ? "text-danger hover:bg-danger-muted" : "hover:text-ink"
+                )}
+              >
+                {deletePolicy.label}
+              </button>
+
+              {mailboxActions.some((action) => !action.primary) && (
+                <span className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen((open) => !open)}
+                    aria-expanded={moreOpen}
+                    aria-haspopup="menu"
+                    className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink"
+                  >
+                    More
+                  </button>
+                  {moreOpen && (
+                    <span
+                      role="menu"
+                      className="absolute bottom-full right-0 z-20 mb-1 flex min-w-36 flex-col rounded-lg border border-border bg-surface-raised p-1 shadow-lg"
+                    >
+                      {mailboxActions
+                        .filter((action) => !action.primary)
+                        .map((action) => (
+                          <button
+                            key={action.id}
+                            role="menuitem"
+                            type="button"
+                            onClick={() => {
+                              setMoreOpen(false);
+                              void act(action.operation, selectedMessageIds);
+                            }}
+                            className="rounded px-2 py-1 text-left text-ink-secondary hover:bg-surface-sunken hover:text-ink"
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                    </span>
+                  )}
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="rounded px-2 py-0.5 hover:bg-surface-sunken hover:text-ink"
+              >
+                Clear
+              </button>
             </span>
           )}
           <span className="ml-auto flex items-center gap-3">
@@ -778,6 +927,50 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
       )}
 
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+
+      {/*
+        Shown only where deletion is irreversible. It names the count and says
+        plainly that it cannot be undone, and Cancel takes focus so Enter on a
+        dialog nobody read does nothing.
+      */}
+      {confirmingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-delete-title"
+            aria-describedby="confirm-delete-body"
+            className="w-full max-w-sm rounded-xl border border-border bg-surface-raised p-5 shadow-lg"
+          >
+            <h2 id="confirm-delete-title" className="text-base font-semibold text-ink">
+              {deletePolicy.confirmTitle}
+            </h2>
+            <p id="confirm-delete-body" className="mt-1 text-sm text-ink-secondary">
+              {deletePolicy.confirmBody}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setConfirmingDelete(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-sunken"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  void act(deletePolicy.operation, selectedMessageIds);
+                }}
+                className="rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              >
+                {deletePolicy.label}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {composing && (
         <Composer

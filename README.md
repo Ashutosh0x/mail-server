@@ -151,7 +151,9 @@ Status is evidence-based, not aspirational:
 | Conversation view | **Built** | Sender details, authentication chips, attachment list |
 | System mailboxes | **Built** | Inbox, Sent, Drafts, Archive, Spam, Trash, with live unread and total counts |
 | Custom labels | **Built** | CRUD via `/api/labels`, 12 OKLCH colours |
-| Bulk actions | **Built** | Read, unread, star, archive, trash, spam, restore, permanent delete |
+| Bulk actions | **Built** | Read, unread, star, archive, trash, spam, restore, purge. One bulk endpoint, one transaction, max 500 |
+| Mailbox-aware delete | **Built** | Delete means Trash in Inbox/Sent/Archive and **permanent** in Trash/Spam/Drafts, with a confirmation only where it cannot be undone. [docs/mail-actions.md](docs/mail-actions.md) |
+| Select all | **Built** | Scoped to the current page, and says so when more exist beyond it |
 | Undo | **Built** | Only where a genuine inverse exists. Permanent delete offers none, because nothing restores it |
 | Row density | **Built** | Compact, comfortable, spacious |
 | Swipe to act | **Built** | Directional axis lock; destructive swipes need roughly twice the travel |
@@ -328,6 +330,7 @@ Start at **[docs/](docs/)**. The most useful entry points:
 - [Security model](docs/security.md) — and what is missing from it
 - [Blueprint verification](docs/blueprint-verification.md) — planning documents
   checked against primary sources
+- [Mail actions](docs/mail-actions.md) — what Delete means in each mailbox, and why
 - [Cross-platform](docs/cross-platform.md) — the platform layer, per-OS directories, and the honest support matrix
 - [Storage](docs/storage.md) — connectors, discovery, SSRF guard, and what is not built
 - [Audit verification](docs/AUDIT-VERIFICATION.md) — pasted audit reports checked
