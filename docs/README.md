@@ -25,12 +25,16 @@ what is built.** Where any other document disagrees with it, it wins.
 | [Search grammar](search.md) | The query language shared by chips and SQL |
 | [Connectors](connectors.md) | The provider registry and the connector contract |
 | [Storage architecture](STORAGE-ARCHITECTURE.md) | Providers, NFS mount verification, real health checks |
+| [Composer architecture](COMPOSER-ARCHITECTURE.md) | Draft to SMTP, and why the editor is not TipTap |
+| [Composer drafts](COMPOSER-DRAFTS.md) | Autosave, versioning, conflict handling |
+| [Composer attachments](COMPOSER-ATTACHMENTS.md) | Upload lifecycle, limits, the state race |
 
 ## For people reviewing it
 
 | Page | What it covers |
 |---|---|
 | [Security model](security.md) | Every control, the threat it answers, and what is *not* built |
+| [Composer security](COMPOSER-SECURITY.md) | Header injection, HTML sanitisation, sender authorisation |
 | [Blueprint verification](blueprint-verification.md) | Planning documents checked against primary sources |
 | [Benchmark scenarios](../benchmarks/external-storage/) | Definitions only. **No results — nothing has been run** |
 

@@ -84,11 +84,17 @@ export const api = {
 
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
 
+  /** Mirrors `publicConfig()` exactly. Drift here means the UI enforces a
+   *  different limit from the server, which surfaces as a rejected send. */
   config: () =>
     request<{
       maxAttachmentBytes: number;
+      maxMessageBytes: number;
+      maxOutboundMessageBytes: number;
       maxUserStorageBytes: number;
+      uploadChunkBytes: number;
       maxRecipients: number;
+      maxPageSize: number;
       defaultPageSize: number;
       outboundConfigured: boolean;
     }>("/api/config"),
@@ -194,6 +200,12 @@ export const api = {
     }),
 
   // ── Compose ──────────────────────────────────────────────────────────────
+
+  /** Suggestions from the caller's own sent mail. No contact store exists. */
+  recipientSuggestions: (query: string) =>
+    request<{ recipients: { name: string | null; email: string; count: number; lastUsedAt: string }[] }>(
+      `/api/recipients?q=${encodeURIComponent(query)}`
+    ),
 
   createDraft: () =>
     request<{ draftId: string; senders: { name?: string | null; email: string }[] }>(

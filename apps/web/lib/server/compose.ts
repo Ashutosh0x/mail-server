@@ -1,5 +1,6 @@
 import "server-only";
 import { db, newId, nowIso, transaction } from "./db";
+import { sanitizeMessageHtml } from "./sanitize";
 import { config } from "./config";
 import { storage } from "./storage";
 import {
@@ -143,7 +144,11 @@ export function saveDraft(
     return { ok: false, reason: "conflict", current: loadDraft(userId, draftId) ?? undefined };
   }
 
-  const text = htmlToText(input.bodyHtml);
+  // Sanitised on the way IN, not on the way out: the stored value is what
+  // gets sent, so it must already be safe. A client-side sanitiser protects
+  // nobody, because anything can POST to this API directly.
+  const safeHtml = sanitizeMessageHtml(input.bodyHtml);
+  const text = htmlToText(safeHtml);
   const next = current + 1;
 
   transaction(() => {
@@ -156,7 +161,7 @@ export function saveDraft(
       )
       .run(
         input.subject,
-        input.bodyHtml,
+        safeHtml,
         text,
         text.slice(0, 200),
         input.inReplyTo ?? null,
@@ -494,4 +499,60 @@ export function queueStatus(userId: string, queueId: string): QueueEntry | null 
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
+}
+
+
+// ── Recent recipients ──────────────────────────────────────────────────────
+
+export interface RecentRecipient {
+  name: string | null;
+  email: string;
+  /** How many messages this user has sent to the address. */
+  count: number;
+  lastUsedAt: string;
+}
+
+/**
+ * Addresses this user has actually written to.
+ *
+ * Derived from their own sent mail rather than from a contact store, because
+ * there is no contact store — and inventing one would be exactly the fake
+ * data this project refuses. Every row here is a message the user really
+ * sent.
+ *
+ * Scoped to `user_id` throughout: one account's correspondents must never
+ * surface in another's suggestions.
+ */
+export function recentRecipients(userId: string, query: string, limit = 8): RecentRecipient[] {
+  const trimmed = query.trim().toLowerCase();
+
+  // LIKE with a bound parameter, never string interpolation. The wildcards
+  // are ours; the user text is data.
+  //
+  // `!` is the escape character rather than a backslash: any single
+  // character works, and a backslash here would need escaping in the JS
+  // string, in the SQL, and in the template literal.
+  const pattern = "%" + trimmed.replace(/[%_!]/g, (c) => "!" + c) + "%";
+
+  const rows = db()
+    .prepare(
+      `SELECT r.email, MAX(r.name) AS name, COUNT(*) AS n, MAX(m.created_at) AS last_used
+         FROM message_recipients r
+         JOIN messages m ON m.id = r.message_id
+        WHERE m.user_id = ?
+          AND m.is_draft = 0
+          AND m.sent_at IS NOT NULL
+          AND (LOWER(r.email) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.name, '')) LIKE ? ESCAPE '!')
+        GROUP BY LOWER(r.email)
+        ORDER BY n DESC, last_used DESC
+        LIMIT ?`
+    )
+    .all(userId, pattern, pattern, Math.min(limit, 20)) as Record<string, unknown>[];
+
+  return rows.map((row) => ({
+    email: row.email as string,
+    name: (row.name as string | null) ?? null,
+    count: Number(row.n),
+    lastUsedAt: row.last_used as string,
+  }));
 }

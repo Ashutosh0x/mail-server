@@ -6,6 +6,8 @@ import { api, ApiError } from "@/lib/api";
 import { isValidAddress } from "@/lib/address";
 import { useMotion } from "@/lib/motion-preference";
 import { RecipientField, type Recipient } from "./recipient-field";
+import { Editor } from "./editor";
+import { AttachmentPanel, type AttachmentItem } from "./attachments";
 
 /**
  * The composer.
@@ -54,6 +56,26 @@ export function Composer({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+
+  // Limits come from the server, never hardcoded here — the UI must not
+  // disagree with what the backend will actually accept.
+  const [limits, setLimits] = useState<{ maxAttachmentBytes: number; maxOutboundMessageBytes: number } | null>(
+    null
+  );
+  useEffect(() => {
+    void api
+      .config()
+      .then((c) =>
+        setLimits({
+          maxAttachmentBytes: c.maxAttachmentBytes,
+          maxOutboundMessageBytes: c.maxOutboundMessageBytes,
+        })
+      )
+      .catch(() => undefined);
+  }, []);
+
+  const openPicker = useRef<(() => void) | null>(null);
 
   const version = useRef(0);
   // Generated once per composer, so a double-click or a retried request
@@ -97,7 +119,7 @@ export function Composer({
   const dirty = useRef(false);
   useEffect(() => {
     dirty.current = true;
-  }, [to, cc, bcc, subject, body]);
+  }, [to, cc, bcc, subject, body, attachments]);
 
   useEffect(() => {
     if (!draftId) return undefined;
@@ -116,6 +138,9 @@ export function Composer({
           bcc,
           subject,
           bodyHtml: body,
+          // Only ids the server has actually stored. An upload still in
+          // flight is not yet part of the draft.
+          attachmentIds: attachments.filter((a) => a.id).map((a) => a.id!),
           version: version.current,
         })
         .then((result) => {
@@ -133,11 +158,20 @@ export function Composer({
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [draftId, to, cc, bcc, subject, body]);
+  }, [draftId, to, cc, bcc, subject, body, attachments]);
 
   // ── Send ─────────────────────────────────────────────────────────────────
   const invalid = [...to, ...cc, ...bcc].filter((r) => !isValidAddress(r.email));
-  const canSend = draftId !== null && to.length + cc.length + bcc.length > 0 && invalid.length === 0;
+  const uploading = attachments.some((a) => a.status === "uploading");
+  const failedUploads = attachments.filter((a) => a.status === "failed");
+
+  // Sending while an upload is in flight would produce a message
+  // referencing an attachment that does not exist yet.
+  const canSend =
+    draftId !== null &&
+    to.length + cc.length + bcc.length > 0 &&
+    invalid.length === 0 &&
+    !uploading;
 
   const send = useCallback(async () => {
     if (!draftId || !canSend) return;
@@ -147,7 +181,14 @@ export function Composer({
     try {
       // Flush pending edits first — sending a draft the server has not seen
       // would send yesterday's text.
-      await api.saveDraft(draftId, { to, cc, bcc, subject, bodyHtml: body });
+      await api.saveDraft(draftId, {
+        to,
+        cc,
+        bcc,
+        subject,
+        bodyHtml: body,
+        attachmentIds: attachments.filter((a) => a.id).map((a) => a.id!),
+      });
       const result = await api.sendDraft(draftId, idempotencyKey.current, from || undefined);
 
       if (result.delivery.status === "sent") {
@@ -174,7 +215,7 @@ export function Composer({
       setSendState({ kind: "idle" });
       setError(cause instanceof ApiError ? cause.message : "The message could not be sent.");
     }
-  }, [draftId, canSend, to, cc, bcc, subject, body, from, onClose, onSent]);
+  }, [draftId, canSend, to, cc, bcc, subject, body, attachments, from, onClose, onSent]);
 
   /**
    * Close, discarding the draft only if nothing was written.
@@ -191,7 +232,10 @@ export function Composer({
       cc.length === 0 &&
       bcc.length === 0 &&
       subject.trim() === "" &&
-      body.trim() === "";
+      // Tags with no text still count as empty — an editor left untouched
+      // often holds a stray <br>.
+      body.replace(/<[^>]*>/g, "").trim() === "" &&
+      attachments.length === 0;
 
     if (draftId && untouched && sendState.kind === "idle") {
       // Fire and forget: the composer should close instantly, and a failed
@@ -199,7 +243,7 @@ export function Composer({
       void api.deleteDraft(draftId).catch(() => undefined);
     }
     onClose();
-  }, [draftId, to, cc, bcc, subject, body, sendState.kind, onClose]);
+  }, [draftId, to, cc, bcc, subject, body, attachments, sendState.kind, onClose]);
 
   // Cmd/Ctrl+Enter sends; Escape closes. Escape never discards written
   // content — the draft is already saved, so closing is safe.
@@ -326,11 +370,16 @@ export function Composer({
         />
       </div>
 
-      <textarea
-        value={body}
-        onChange={(event) => setBody(event.target.value)}
-        className="min-h-0 flex-1 resize-none bg-transparent p-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-muted"
-        placeholder="Write your message…"
+      <Editor value={body} onChange={setBody} placeholder="Write your message…" />
+
+      <AttachmentPanel
+        items={attachments}
+        onChange={setAttachments}
+        maxBytes={limits?.maxAttachmentBytes ?? 0}
+        maxOutboundBytes={limits?.maxOutboundMessageBytes ?? 0}
+        registerOpen={(open) => {
+          openPicker.current = open;
+        }}
       />
 
       {error && (
@@ -377,11 +426,28 @@ export function Composer({
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Draft saved" : ""}
         </span>
 
-        <span className="ml-auto text-xs text-ink-muted">
-          {/* Attachments need the upload path wired into the draft; the API
-              exists but the picker does not, so nothing here pretends. */}
-          Attachments are not wired into the composer yet
-        </span>
+        <button
+          type="button"
+          onClick={() => openPicker.current?.()}
+          disabled={limits === null}
+          title="Attach files"
+          aria-label="Attach files"
+          className="rounded-md p-2 text-ink-secondary hover:bg-surface-sunken hover:text-ink disabled:opacity-50 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+        >
+          <Icon icon={icons.editor.attach} size="md" />
+        </button>
+
+        {uploading && (
+          <span className="text-xs text-ink-muted">
+            Waiting for {attachments.filter((a) => a.status === "uploading").length} upload
+            {attachments.filter((a) => a.status === "uploading").length === 1 ? "" : "s"}…
+          </span>
+        )}
+        {!uploading && failedUploads.length > 0 && (
+          <span className="text-xs text-danger">
+            {failedUploads.length} attachment{failedUploads.length === 1 ? "" : "s"} failed
+          </span>
+        )}
       </footer>
     </div>
   );
