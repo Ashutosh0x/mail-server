@@ -1,6 +1,7 @@
 "use client";
 
-import type { Thread } from "@mailserver/types";
+import { useState } from "react";
+import type { EmailHeader, Thread } from "@mailserver/types";
 import { Icon, cn, iconForMimeType, icons } from "@mailserver/ui";
 import { formatBytes, initialsOf, senderLabel } from "@/lib/format";
 import { AuthenticationChips, PhishingBanner } from "./verdict-badge";
@@ -22,10 +23,15 @@ export type ThreadAction = (typeof ACTIONS)[number]["key"];
 
 export function ReadingPane({
   thread,
+  emails,
+  loadingThread,
   onAction,
   busy,
 }: {
   thread: Thread | null;
+  /** Every message in the conversation. Null until the fetch resolves. */
+  emails?: EmailHeader[] | null;
+  loadingThread?: boolean;
   onAction?: (action: ThreadAction) => void;
   /** True while an action is in flight, so it cannot be fired twice. */
   busy?: boolean;
@@ -43,7 +49,9 @@ export function ReadingPane({
   }
 
   const { latest } = thread;
-  const sender = senderLabel(latest.from);
+  // The newest message alone until the full thread arrives, so opening a
+  // conversation shows something immediately rather than an empty pane.
+  const messages = emails && emails.length > 0 ? emails : [latest];
 
   return (
     <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col bg-canvas">
@@ -73,31 +81,94 @@ export function ReadingPane({
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <PhishingBanner auth={latest.authentication} verdict={latest.verdict} />
 
-        <article className="mt-3 rounded-xl border border-border bg-surface-raised">
-          <div className="flex items-start gap-3 border-b border-border-muted p-4">
-            <span
-              aria-hidden
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-medium text-primary"
-            >
-              {initialsOf(sender)}
+        {/*
+          Every message in the conversation, oldest first — the order a thread
+          is read in. Until now this rendered only the newest while the header
+          counted them all, so a five-message thread showed one message and
+          said "5 messages".
+
+          `messages` falls back to the newest alone while the full thread is
+          still loading, so the pane never renders empty.
+        */}
+        <ol className="mt-3 space-y-3">
+          {messages.map((message, index) => (
+            <li key={message.id}>
+              <MessageCard
+                message={message}
+                // The newest is what someone opened the thread to read.
+                defaultOpen={index === messages.length - 1}
+              />
+            </li>
+          ))}
+        </ol>
+
+        {loadingThread && (
+          <p className="mt-3 text-sm text-ink-muted" role="status">
+            Loading the rest of this conversation…
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+
+/**
+ * One message in a conversation.
+ *
+ * Collapsed by default except the newest: a long thread is unreadable when
+ * every message is expanded at once, and the one worth reading is almost
+ * always the last.
+ */
+function MessageCard({ message, defaultOpen }: { message: EmailHeader; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const sender = senderLabel(message.from);
+  const when = new Date(message.receivedAt).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return (
+    <article className="rounded-xl border border-border bg-surface-raised">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-start gap-3 p-4 text-left"
+      >
+        <span
+          aria-hidden
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-medium text-primary"
+        >
+          {initialsOf(sender)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold text-ink">{sender}</span>
+            <span className="text-sm text-ink-muted">&lt;{message.from[0]?.email}&gt;</span>
+          </span>
+          {open ? (
+            <span className="block text-sm text-ink-muted">
+              to {message.to.map((a) => a.name ?? a.email).join(", ") || "undisclosed recipients"}
+              {message.cc.length > 0 &&
+                `, cc ${message.cc.map((a) => a.name ?? a.email).join(", ")}`}
             </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="font-semibold text-ink">{sender}</span>
-                <span className="text-sm text-ink-muted">&lt;{latest.from[0]?.email}&gt;</span>
-              </div>
-              <p className="text-sm text-ink-muted">
-                to {latest.to.map((a) => a.name ?? a.email).join(", ") || "undisclosed recipients"}
-              </p>
-              <div className="mt-2">
-                <AuthenticationChips auth={latest.authentication} />
-              </div>
-            </div>
-            <time dateTime={latest.receivedAt} className="shrink-0 text-sm text-ink-muted">
-              {new Date(latest.receivedAt).toLocaleString("en-US", {
-                month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-              })}
-            </time>
+          ) : (
+            // Collapsed rows carry the preview, so a thread can be skimmed.
+            <span className="block truncate text-sm text-ink-muted">{message.preview}</span>
+          )}
+        </span>
+        <time dateTime={message.receivedAt} className="shrink-0 text-sm text-ink-muted">
+          {when}
+        </time>
+      </button>
+
+      {open && (
+        <>
+          <div className="border-t border-border-muted px-4 py-3">
+            <AuthenticationChips auth={message.authentication} />
           </div>
 
           {/*
@@ -113,37 +184,52 @@ export function ReadingPane({
             the preview stays until those three exist.
           */}
           <div className="p-4">
-            <p className="whitespace-pre-wrap text-base leading-relaxed text-ink-secondary">{latest.preview}</p>
+            <p className="whitespace-pre-wrap text-base leading-relaxed text-ink-secondary">
+              {message.preview}
+            </p>
             <p className="mt-4 flex items-center gap-2 rounded-md bg-surface-sunken px-3 py-2 text-sm text-ink-muted">
               <Icon icon={icons.security.trackerBlocked} size="sm" />
               HTML rendering is disabled until the sanitisation pipeline ships.
             </p>
           </div>
 
-          {latest.attachments.length > 0 && (
+          {message.attachments.length > 0 && (
             <div className="border-t border-border-muted p-4">
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                {latest.attachments.length} attachment{latest.attachments.length === 1 ? "" : "s"}
+                {message.attachments.length} attachment{message.attachments.length === 1 ? "" : "s"}
               </h2>
               <ul className="flex flex-wrap gap-2">
-                {latest.attachments.map((file) => (
-                  <li
-                    key={file.blobId}
-                    className="flex items-center gap-2.5 rounded-lg border border-border bg-surface px-3 py-2"
-                  >
-                    <Icon icon={iconForMimeType(file.type)} size="md" className="text-attachment" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-ink">{file.name ?? "(unnamed)"}</span>
-                      <span className="block text-xs text-ink-muted">{formatBytes(file.size)}</span>
-                    </span>
+                {message.attachments.map((file) => (
+                  <li key={file.blobId}>
+                    {/*
+                      A real download from the authenticated endpoint, which
+                      checks ownership and streams from storage. `download`
+                      asks the browser to save rather than navigate, so an
+                      HTML attachment cannot execute on this origin.
+                    */}
+                    <a
+                      href={`/api/attachments/${encodeURIComponent(file.blobId)}`}
+                      download={file.name ?? undefined}
+                      className="flex items-center gap-2.5 rounded-lg border border-border bg-surface px-3 py-2 hover:border-primary hover:bg-surface-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    >
+                      <Icon icon={iconForMimeType(file.type)} size="md" className="text-attachment" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-ink">
+                          {file.name ?? "(unnamed)"}
+                        </span>
+                        <span className="block text-xs text-ink-muted">
+                          {formatBytes(file.size)} · Download
+                        </span>
+                      </span>
+                    </a>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-        </article>
-      </div>
-    </section>
+        </>
+      )}
+    </article>
   );
 }
 

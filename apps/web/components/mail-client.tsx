@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Label, Mailbox, Thread } from "@mailserver/types";
+import type { EmailHeader, Label, Mailbox, Thread } from "@mailserver/types";
 import { parseQuery, removeTermAt, termsOf } from "@mailserver/types";
 import { Icon, cn, icons } from "@mailserver/ui";
 import { api, ApiError, type SessionInfo } from "@/lib/api";
@@ -16,6 +16,7 @@ import { ProfileMenu } from "./account/profile-menu";
 import { AccountCenter, type AccountSection } from "./account/account-center";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { Composer } from "./compose/composer";
+import { StoragePage } from "./storage/storage-page";
 
 const DENSITIES = [
   { id: "compact" as const, label: "Compact", icon: icons.settings.densityCompact },
@@ -103,6 +104,8 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   const [accountSection, setAccountSection] = useState<AccountSection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [composing, setComposing] = useState(false);
+  /** The Storage page replaces the list and reading pane while open. */
+  const [storageOpen, setStorageOpen] = useState(false);
   /** Set when the composer is opening onto an existing draft rather than a new one. */
   const [reopenDraftId, setReopenDraftId] = useState<string | null>(null);
 
@@ -115,9 +118,62 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   const chips = useMemo(() => termsOf(parsed), [parsed]);
   const activeMailbox = mailboxes?.find((m) => m.id === activeMailboxId) ?? null;
 
+  /**
+   * Appearance follows the ACCOUNT, not the browser tab.
+   *
+   * Theme, density and the sidebar were session-local state, so every
+   * reload reset them and a second device disagreed. They live in
+   * `preferences.appearance`, which already existed and was already
+   * persisted server-side — the mail client simply never read it.
+   *
+   * Loaded once on mount. A failure leaves the defaults in place rather
+   * than blocking the mailbox on a preferences request.
+   */
+  const prefsLoaded = useRef(false);
+  useEffect(() => {
+    void api
+      .preferences()
+      .then(({ preferences }) => {
+        const { theme: stored, density: storedDensity, sidebarCollapsed } = preferences.appearance;
+        // "system" is a real third choice, resolved against the OS here
+        // rather than stored as whatever it happened to resolve to.
+        setTheme(
+          stored === "system"
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : stored
+        );
+        setDensity(storedDensity);
+        // Narrow screens force the rail regardless; see the effect below.
+        if (window.innerWidth >= 768) setSidebarCollapsed(sidebarCollapsed);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        prefsLoaded.current = true;
+      });
+  }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  /**
+   * Persist a change the user made.
+   *
+   * Guarded on `prefsLoaded` so the initial render does not immediately
+   * write the defaults back over what was just fetched.
+   */
+  const savePreference = useCallback(
+    (patch: { theme?: "light" | "dark"; density?: Density; sidebarCollapsed?: boolean }) => {
+      if (!prefsLoaded.current) return;
+      void api.updatePreferences({ appearance: patch }).catch(() => {
+        // The change stays applied locally; only its persistence failed.
+        toast.show("That preference could not be saved.", { tone: "error" });
+      });
+    },
+    [toast]
+  );
 
   // Below md the sidebar is forced to its icon rail. A 224px sidebar next
   // to a 420px list needs 644px; on a 390px screen the list was rendering
@@ -199,6 +255,46 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
     setOpenThread(threads?.find((t) => t.id === openId) ?? null);
   }, [threads, openId]);
 
+  /**
+   * The full conversation, fetched only when one is opened.
+   *
+   * The list row carries the newest message, which is what the pane shows
+   * while this is in flight. `cancelled` matters because opening several
+   * conversations quickly would otherwise let an earlier response overwrite a
+   * later one, showing the wrong thread's messages.
+   */
+  const [threadEmails, setThreadEmails] = useState<EmailHeader[] | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+
+  useEffect(() => {
+    if (!openId) {
+      setThreadEmails(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setThreadLoading(true);
+    setThreadEmails(null);
+
+    void api
+      .thread(openId)
+      .then((result) => {
+        if (!cancelled) setThreadEmails(result.emails);
+      })
+      .catch(() => {
+        // The newest message still renders from the list, so this degrades to
+        // a single-message view rather than an empty pane.
+        if (!cancelled) setThreadEmails(null);
+      })
+      .finally(() => {
+        if (!cancelled) setThreadLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openId]);
+
   const act = useCallback(
     async (action: string, ids: string[], optimistic?: () => void, revert?: () => void) => {
       // Measure before the list reorders, so the rows below can slide into the
@@ -273,6 +369,34 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
     [openThread, threadBusy, act, toast]
   );
 
+  /**
+   * The next page, appended.
+   *
+   * Uses the keyset cursor the API already returns, so a message arriving
+   * mid-scroll cannot cause a row to repeat or be skipped the way an OFFSET
+   * would. Appended rather than replaced, because replacing would throw away
+   * everything already read.
+   */
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMore = useCallback(async () => {
+    if (!activeMailboxId || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.threads({
+        mailboxId: activeMailboxId,
+        q: debouncedQuery || undefined,
+        cursor: nextCursor,
+      });
+      setThreads((current) => [...(current ?? []), ...page.items]);
+      setNextCursor(page.nextCursor);
+      setTotal(page.total);
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : "Could not load more.", { tone: "error" });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeMailboxId, nextCursor, loadingMore, debouncedQuery, toast]);
+
   const visible = threads ?? [];
 
   const toggleSet = (set: Set<string>, id: string) => {
@@ -311,6 +435,14 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
       }
 
       const currentId = visible[cursor]?.latest.id;
+      // A selection wins over the cursor: someone who ticked five rows and
+      // pressed Shift+I meant those five, not whichever row the cursor is on.
+      const targetIds =
+        selected.size > 0
+          ? visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id)
+          : currentId
+            ? [currentId]
+            : [];
       switch (event.key) {
         case "j": setCursor((c) => Math.min(c + 1, Math.max(visible.length - 1, 0))); event.preventDefault(); break;
         case "k": setCursor((c) => Math.max(c - 1, 0)); event.preventDefault(); break;
@@ -323,6 +455,12 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         case "e": if (currentId) void act("archive", [currentId]); event.preventDefault(); break;
         case "#": if (currentId) void act("trash", [currentId]); event.preventDefault(); break;
         case "u": if (currentId) void act(visible[cursor]!.unreadCount > 0 ? "read" : "unread", [currentId]); event.preventDefault(); break;
+        // Shift+I and Shift+U set the state outright rather than toggling, so
+        // a bulk selection ends up uniform instead of each row flipping.
+        case "I": if (targetIds.length) void act("read", targetIds); event.preventDefault(); break;
+        case "U": if (targetIds.length) void act("unread", targetIds); event.preventDefault(); break;
+        case "Delete":
+        case "Backspace": if (targetIds.length) void act("trash", targetIds); event.preventDefault(); break;
         case "g": pendingG = true; break;
         case "c": setComposing(true); event.preventDefault(); break;
         // Reply, reply-all and forward act on the OPEN conversation, not the
@@ -337,13 +475,13 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         // on `key` rather than `code`. The reference was previously reachable
         // only through the profile menu.
         case "?": setShortcutsOpen(true); event.preventDefault(); break;
-        case ",": setSidebarCollapsed((v) => !v); event.preventDefault(); break;
+        case ",": setSidebarCollapsed((v) => { savePreference({ sidebarCollapsed: !v }); return !v; }); event.preventDefault(); break;
         default: break;
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen, composing, openThread, runThreadAction]);
+  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen, composing, openThread, runThreadAction, selected, savePreference]);
 
   if (loading) {
     return (
@@ -382,7 +520,17 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         labels={labels}
         activeMailboxId={activeMailboxId ?? ""}
         collapsed={sidebarCollapsed}
-        onSelect={(id) => { setActiveMailboxId(id); setCursor(0); setOpenId(null); }}
+        onSelect={(id) => {
+          setActiveMailboxId(id);
+          setCursor(0);
+          setOpenId(null);
+          setStorageOpen(false);
+        }}
+        storageActive={storageOpen}
+        onOpenStorage={() => {
+          setStorageOpen(true);
+          setOpenId(null);
+        }}
         onCompose={() => setComposing(true)}
       />
 
@@ -390,7 +538,12 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-2.5">
           <button
             type="button"
-            onClick={() => setSidebarCollapsed((v) => !v)}
+            onClick={() =>
+              setSidebarCollapsed((v) => {
+                savePreference({ sidebarCollapsed: !v });
+                return !v;
+              })
+            }
             className="rounded-md p-1.5 text-ink-secondary hover:bg-surface-sunken hover:text-ink"
           >
             <Icon icon={sidebarCollapsed ? icons.chrome.expandSidebar : icons.chrome.collapseSidebar} size="md"
@@ -418,7 +571,10 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
               <button
                 key={option.id}
                 type="button"
-                onClick={() => setDensity(option.id)}
+                onClick={() => {
+                  setDensity(option.id);
+                  savePreference({ density: option.id });
+                }}
                 aria-pressed={density === option.id}
                 title={`${option.label} density`}
                 className={cn("rounded-md p-1.5", density === option.id ? "bg-primary-muted text-primary" : "text-ink-secondary hover:bg-surface-sunken hover:text-ink")}
@@ -428,7 +584,13 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
             ))}
             <button
               type="button"
-              onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+              onClick={() =>
+                setTheme((t) => {
+                  const next = t === "light" ? "dark" : "light";
+                  savePreference({ theme: next });
+                  return next;
+                })
+              }
               className="rounded-md p-1.5 text-ink-secondary hover:bg-surface-sunken hover:text-ink"
             >
               <Icon icon={theme === "light" ? icons.settings.dark : icons.settings.light} size="md"
@@ -476,6 +638,12 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         )}
 
         <div className="relative flex min-h-0 flex-1">
+          {/* Storage replaces the list and reading pane rather than sitting
+              beside them: it is a different surface, not a third column. */}
+          {storageOpen ? (
+            <StoragePage />
+          ) : (
+          <>
           <div
             role="grid"
             aria-label={`${activeMailbox?.name ?? "Mail"} messages`}
@@ -555,16 +723,33 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
                 : "hidden md:block"
             )}
           >
-            <ReadingPane thread={openThread} busy={threadBusy} onAction={runThreadAction} />
+            <ReadingPane
+              thread={openThread}
+              emails={threadEmails}
+              loadingThread={threadLoading}
+              busy={threadBusy}
+              onAction={runThreadAction}
+            />
           </div>
+          </>
+          )}
         </div>
 
         <footer className="flex items-center gap-4 border-t border-border bg-surface px-4 py-1.5 text-xs text-ink-muted">
           <span>
             {total} conversation{total === 1 ? "" : "s"}
             {selected.size > 0 && ` · ${selected.size} selected`}
-            {nextCursor && " · more available"}
           </span>
+          {nextCursor && (
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="rounded border border-border px-2 py-0.5 font-medium text-ink hover:bg-surface-sunken disabled:opacity-60"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          )}
           {selected.size > 0 && (
             <span className="flex items-center gap-1">
               <button type="button" onClick={() => void act("archive", visible.filter((t) => selected.has(t.id)).map((t) => t.latest.id))}

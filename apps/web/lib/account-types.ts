@@ -68,6 +68,9 @@ export interface Preferences {
     density: "compact" | "comfortable" | "spacious";
     reducedMotion: boolean;
     messagePreview: boolean;
+    /** The mail sidebar's collapsed state, so it survives a reload and follows
+     *  the account to another device. */
+    sidebarCollapsed: boolean;
   };
   notifications: {
     desktop: boolean;

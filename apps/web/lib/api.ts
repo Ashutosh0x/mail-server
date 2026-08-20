@@ -1,10 +1,16 @@
-import type { Label, Mailbox, Thread } from "@mailserver/types";
+import type { EmailHeader, Label, Mailbox, Thread } from "@mailserver/types";
 import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
   AuthenticationResponseJSON,
 } from "@simplewebauthn/browser";
+import type { DiscoveryResult } from "./storage-types";
+import type {
+  CleanupAction,
+  CleanupReport,
+  Orphans,
+} from "./cleanup-types";
 import type {
   AccountOverview,
   AccountProfile,
@@ -103,6 +109,17 @@ export const api = {
 
   labels: () => request<{ labels: Label[] }>("/api/labels"),
 
+  /**
+   * One conversation, with every message in it.
+   *
+   * The list already carries the newest message, so this is fetched only when
+   * a conversation is opened — the list must not pay for bodies nobody reads.
+   */
+  thread: (threadId: string) =>
+    request<{ thread: Thread; emails: EmailHeader[] }>(
+      `/api/mail/${encodeURIComponent(threadId)}`
+    ),
+
   threads: (params: { mailboxId?: string; q?: string; cursor?: string | null; limit?: number }) => {
     const query = new URLSearchParams();
     if (params.mailboxId) query.set("mailboxId", params.mailboxId);
@@ -190,6 +207,35 @@ export const api = {
 
   storage: () =>
     request<{ storage: StorageUsage; unavailable: { cleanupTools: string } }>("/api/account/storage"),
+
+  /** What is taking up space. Read-only, so it is safe to re-poll after a delete. */
+  cleanupReport: (olderThanDays?: number) =>
+    request<{ report: CleanupReport; orphans: Orphans; storage: StorageUsage }>(
+      `/api/account/storage/cleanup${olderThanDays ? `?olderThanDays=${olderThanDays}` : ""}`
+    ),
+
+  /**
+   * Delete, permanently. Returns what was ACTUALLY removed plus fresh totals —
+   * `failures` is never empty on a partial failure, and the caller must show it
+   * rather than reporting a clean success.
+   */
+  runCleanup: (action: CleanupAction, ids?: string[]) =>
+    request<{
+      action: CleanupAction;
+      deleted: number;
+      freedBytes: number;
+      failures: { id: string; reason: string }[];
+      storage: StorageUsage;
+    }>("/api/account/storage/cleanup", {
+      method: "POST",
+      body: JSON.stringify({ action, ids }),
+    }),
+
+  /**
+   * Storage the SERVER can see. Discovery is server-side by necessity — a
+   * browser cannot enumerate the host's mounts or the local network.
+   */
+  discoverStorage: () => request<DiscoveryResult>("/api/storage/discover"),
 
   preferences: () => request<{ preferences: Preferences }>("/api/account/preferences"),
 

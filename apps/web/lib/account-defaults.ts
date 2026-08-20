@@ -73,6 +73,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     density: "comfortable",
     reducedMotion: false,
     messagePreview: true,
+    sidebarCollapsed: false,
   },
   notifications: {
     desktop: false,

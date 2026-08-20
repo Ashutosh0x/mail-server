@@ -36,6 +36,8 @@ export function Sidebar({
   collapsed,
   onSelect,
   onCompose,
+  storageActive,
+  onOpenStorage,
 }: {
   mailboxes: Mailbox[];
   labels: Label[];
@@ -43,6 +45,9 @@ export function Sidebar({
   collapsed: boolean;
   onSelect: (id: string) => void;
   onCompose: () => void;
+  /** True while the Storage page is showing instead of a mailbox. */
+  storageActive?: boolean;
+  onOpenStorage?: () => void;
 }) {
 
   // The active highlight is ONE element that React moves between rows. On
@@ -145,6 +150,30 @@ export function Sidebar({
           );
         })}
       </ul>
+
+      {/*
+        Storage is a product surface rather than a mailbox, so it sits in its
+        own group below the folders instead of among them — a "Storage"
+        entry between Spam and Trash would read as a place mail goes.
+      */}
+      <div className="border-t border-border-muted pt-2">
+        <button
+          type="button"
+          onClick={onOpenStorage}
+          aria-current={storageActive ? "page" : undefined}
+          title={collapsed ? "Storage" : undefined}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors duration-[--duration-fast]",
+            collapsed && "justify-center",
+            storageActive
+              ? "bg-primary-muted font-medium text-primary"
+              : "text-ink-secondary hover:bg-surface-sunken"
+          )}
+        >
+          <Icon icon={icons.account.storage} size="md" label={collapsed ? "Storage" : undefined} />
+          {!collapsed && <span className="flex-1 truncate text-left">Storage</span>}
+        </button>
+      </div>
 
       {!collapsed && labels.length > 0 && (
         <div>

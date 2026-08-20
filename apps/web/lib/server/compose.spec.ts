@@ -277,3 +277,145 @@ describe("thread list", () => {
     expect(page.total).toBe(1);
   });
 });
+describe("storage cleanup", () => {
+  let cleanup: typeof import("./storage-cleanup");
+
+  const now = new Date().toISOString();
+  const old = "2020-01-01T00:00:00Z";
+
+  beforeAll(async () => {
+    cleanup = await import("./storage-cleanup");
+    db()
+      .prepare(
+        `INSERT INTO mailboxes (id, user_id, role, name, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`
+      )
+      .run("mb-trash", USER, "trash", "Trash", 6, now);
+    db()
+      .prepare(
+        `INSERT INTO mailboxes (id, user_id, role, name, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`
+      )
+      .run("mb-junk", USER, "junk", "Spam", 7, now);
+  });
+
+  function message(id: string, mailbox: string, bytes: number, receivedAt = now): string {
+    db()
+      .prepare(`INSERT INTO threads (id, user_id, subject_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)`)
+      .run("th-" + id, USER, id, now, now);
+    db()
+      .prepare(
+        `INSERT INTO messages
+           (id, user_id, thread_id, mailbox_id, from_name, from_email, subject,
+            preview, body_text, body_html, size_bytes, is_draft, is_read, received_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, '', '', '', ?, 0, 1, ?, ?)`
+      )
+      .run(id, USER, "th-" + id, mailbox, "s@example.test", "Subject " + id, bytes, receivedAt, now);
+    return id;
+  }
+
+  function attachment(id: string, messageId: string | null, bytes: number): string {
+    db()
+      .prepare(
+        `INSERT INTO attachments
+           (id, user_id, message_id, filename, content_type, size_bytes, storage_key, checksum, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, USER, messageId, id + ".bin", "application/octet-stream", bytes, "key/" + id, "sha256:x", old);
+    return id;
+  }
+
+  it("reports the largest attachments with their message", () => {
+    const m = message("rep-1", "mb-trash", 100);
+    attachment("att-big", m, 9_000_000);
+    attachment("att-small", m, 10);
+
+    const report = cleanup.cleanupReport(USER);
+    const big = report.largestAttachments.find((a) => a.id === "att-big")!;
+    expect(big.size).toBe(9_000_000);
+    expect(big.subject).toBe("Subject rep-1");
+    // Ordered largest first, which is the whole point of the list.
+    const index = report.largestAttachments.findIndex((a) => a.id === "att-big");
+    const smallIndex = report.largestAttachments.findIndex((a) => a.id === "att-small");
+    expect(index).toBeLessThan(smallIndex);
+  });
+
+  it("counts a message as its own bytes plus its attachments", () => {
+    const m = message("rep-2", "mb-trash", 500);
+    attachment("att-2", m, 1_500);
+
+    const found = cleanup.cleanupReport(USER).largestMessages.find((x) => x.id === m)!;
+    expect(found.totalBytes).toBe(2_000);
+    expect(found.attachmentCount).toBe(1);
+  });
+
+  it("finds messages older than the cut-off, and excludes recent ones", () => {
+    message("rep-old", "mb-trash", 10, old);
+    message("rep-new", "mb-trash", 10, now);
+
+    const ids = cleanup.cleanupReport(USER, 365).oldMessages.map((m) => m.id);
+    expect(ids).toContain("rep-old");
+    expect(ids).not.toContain("rep-new");
+  });
+
+  it("treats an attachment with no message as an orphan, after a grace period", () => {
+    attachment("att-orphan", null, 4_096);
+    const orphans = cleanup.orphanedAttachments(USER);
+    expect(orphans.ids).toContain("att-orphan");
+    expect(orphans.bytes).toBeGreaterThanOrEqual(4_096);
+  });
+
+  it("refuses to delete another account's attachment", async () => {
+    const m = message("own-1", "mb-trash", 10);
+    attachment("att-owned", m, 20);
+
+    const outcome = await cleanup.deleteAttachments("someone-else", ["att-owned"]);
+    expect(outcome.deleted).toBe(0);
+    expect(outcome.failures[0]!.reason).toBe("Not found.");
+    // Still there.
+    const row = db().prepare(`SELECT id FROM attachments WHERE id = ?`).get("att-owned");
+    expect(row).toBeDefined();
+  });
+
+  it("refuses to delete another account's message", async () => {
+    const m = message("own-2", "mb-trash", 10);
+    const outcome = await cleanup.deleteMessages("someone-else", [m]);
+    expect(outcome.deleted).toBe(0);
+    expect(db().prepare(`SELECT id FROM messages WHERE id = ?`).get(m)).toBeDefined();
+  });
+
+  it("only empties trash and spam, and reports what it removed", async () => {
+    const a = message("trash-1", "mb-trash", 1_000);
+    const b = message("trash-2", "mb-trash", 2_000);
+
+    const outcome = await cleanup.emptyMailbox(USER, "trash");
+    expect(outcome.deleted).toBeGreaterThanOrEqual(2);
+    expect(outcome.freedBytes).toBeGreaterThanOrEqual(3_000);
+    expect(db().prepare(`SELECT id FROM messages WHERE id = ?`).get(a)).toBeUndefined();
+    expect(db().prepare(`SELECT id FROM messages WHERE id = ?`).get(b)).toBeUndefined();
+  });
+
+  it("keeps the message when its attachment could not be removed", async () => {
+    const m = message("partial-1", "mb-junk", 100);
+    attachment("att-stuck", m, 50);
+
+    // The blob layer refuses for this one object, as a network filesystem can.
+    const failing = vi
+      .spyOn(await import("./storage"), "storage")
+      .mockReturnValue({
+        delete: async () => {
+          throw new Error("Storage is unreachable.");
+        },
+      } as never);
+
+    const outcome = await cleanup.deleteMessages(USER, [m]);
+    failing.mockRestore();
+
+    expect(outcome.deleted).toBe(0);
+    expect(outcome.failures).toHaveLength(1);
+    // Deleting the row would strand the blob where nothing can list it.
+    expect(db().prepare(`SELECT id FROM messages WHERE id = ?`).get(m)).toBeDefined();
+    expect(db().prepare(`SELECT id FROM attachments WHERE id = ?`).get("att-stuck")).toBeDefined();
+  });
+});

@@ -15,6 +15,7 @@ import { Avatar } from "./avatar";
 import { SecurityCenter } from "./security-center";
 import { SettingsSkeleton } from "../interaction/skeleton";
 import { StorageUsage } from "./storage-usage";
+import { StorageCleanup } from "./storage-cleanup";
 import { useMotion } from "@/lib/motion-preference";
 
 /**
@@ -551,7 +552,15 @@ function StorageSection() {
           counter.
         </p>
       </Card>
-      <NotBuilt title="Cleanup tools" reason={data.unavailable.cleanupTools} />
+      <Card>
+        <SectionHeading
+          title="Cleanup"
+          description="Everything below deletes permanently. Each item is named and sized before anything happens."
+        />
+        {/* Re-reads the totals above from the server after a deletion, rather
+            than adjusting a local copy that could drift from the database. */}
+        <StorageCleanup onChanged={reload} />
+      </Card>
     </>
   );
 }
