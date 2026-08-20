@@ -99,7 +99,8 @@ roadmap entirely. See [ADR-0002](docs/adr/0002-calendar-architecture.md),
 | `packages/types` | Domain contract, search grammar, storage federation, connector contract | **built · 57 tests** |
 | `packages/ui` | OKLCH design tokens, icon registry, motion and haptic systems | **built · 33 tests** |
 | `packages/database` | Postgres migrations, SQLite dev schema, migration runner | **built · 10 tests** |
-| `apps/web` | Webmail client, composer, security center, storage layer, platform adapters, 39 API routes | **built · 301 tests** |
+| `apps/web` | Webmail client, composer, security center, storage layer, platform adapters, 39 API routes | **built · 313 tests** |
+| `apps/android` | Native Kotlin/Compose phone client — auth, mailbox, selection, gestures, compose | **partial · 17 tests** |
 | `benchmarks/` | Scenario definitions | **no results — nothing has been run** |
 | `infrastructure/` | Compose, Stalwart and Rspamd config | scaffold, **never executed** |
 | `services/api` | Rust/Axum gateway | not started |
@@ -246,6 +247,43 @@ Status is evidence-based, not aspirational:
 | Admin dashboard | **Planned** | `apps/admin` is empty |
 | Calendar, Contacts, Chat, Meet | **Planned** | All blocked behind Stalwart running |
 
+### Android client
+
+`apps/android` is a native Kotlin/Jetpack Compose phone client. It is a **client
+of this server** — no second backend, no local mail store, every list and count
+resolving to the same API routes the web client uses.
+
+| Feature | Status | Detail |
+|---|---|---|
+| Sign in, register, session | **Built** | Cookie session in Keystore-backed storage; register creates and signs in |
+| Passkey sign-in | **Built, conditionally shown** | Uses the existing WebAuthn routes. Hidden unless the origin is HTTPS on a real domain — Android additionally needs `assetlinks.json`, so a LAN debug build correctly shows no button |
+| Mailbox list | **Built** | Keyset pagination, pull-to-refresh, per-mailbox empty states, real unread counts |
+| Navigation drawer | **Built** | Real mailboxes in the web sidebar's order. Sections whose screens do not exist are absent, not inert |
+| Selection and bulk actions | **Built** | Long-press to select; the toolbar is generated from the same per-mailbox policy the web uses |
+| Swipe gestures | **Built** | Reveal-then-activate, with a longer threshold for destructive actions. **No swipe reaches an irreversible delete** |
+| Search | **Built** | The shared grammar (`from:`, `has:attachment`, `is:unread`, `newer:`), parsed server-side — not reimplemented on the client |
+| Compose | **Built** | Server-side draft from the moment the composer opens, debounced autosave with real 409 conflict resolution, streamed attachments, idempotent send |
+| Haptics | **Built** | One central manager keyed on intent; honours the OS-wide setting, which Compose's own API ignores |
+| Conversation view | **Not built** | Tapping a row is deliberately inert rather than opening a placeholder |
+| Storage, Account, Settings | **Not built** | The backend is real; the client screens are not. See [docs/android/storage.md](docs/android/storage.md) |
+| Offline, notifications | **Not built** | Notifications are blocked on the server, which has no push infrastructure |
+
+Two properties are worth calling out because they are easy to get wrong and hard
+to notice when they are:
+
+**Nothing is applied locally.** Every action goes to the server and the list is
+re-read from the response. That costs a round trip on every star, and it buys
+the guarantee that the app can never show a state the server rejected. `changed`
+below `requested` is reported as a partial result, never rounded up to success.
+
+**"Delete" means the same thing on both clients.** The per-mailbox policy is
+mirrored in `apps/web/components/mail-selection.ts` and
+`apps/android/.../ui/mail/MailPolicy.kt`, and **both are tested against the same
+table**. Changing one without the other is a product bug even when both builds
+pass.
+
+Build and run it against a real server: [docs/android/setup.md](docs/android/setup.md).
+
 ## Three rules
 
 **No fabricated data.** No fixture module, no seed data, no demo account. Every
@@ -333,6 +371,8 @@ Start at **[docs/](docs/)**. The most useful entry points:
 - [Mail actions](docs/mail-actions.md) — what Delete means in each mailbox, and why
 - [Cross-platform](docs/cross-platform.md) — the platform layer, per-OS directories, and the honest support matrix
 - [Storage](docs/storage.md) — connectors, discovery, SSRF guard, and what is not built
+- [Android client](docs/android/) — architecture, navigation, gestures, haptics,
+  compose, security, and an honest per-feature status
 - [Audit verification](docs/AUDIT-VERIFICATION.md) — pasted audit reports checked
   claim by claim against the repository
 - [Composer audit](docs/COMPOSER-FINAL-AUDIT.md) — per-feature status with evidence
