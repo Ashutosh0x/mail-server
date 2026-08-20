@@ -34,9 +34,12 @@ type SendState =
 export function Composer({
   onClose,
   onSent,
+  openDraftId,
 }: {
   onClose: () => void;
   onSent?: () => void;
+  /** Reopen this draft instead of starting a new one. */
+  openDraftId?: string;
 }) {
   const { reduced } = useMotion();
 
@@ -76,6 +79,10 @@ export function Composer({
   }, []);
 
   const openPicker = useRef<(() => void) | null>(null);
+  const [confirmNoSubject, setConfirmNoSubject] = useState(false);
+  // Declared up here rather than beside the autosave effect, because the
+  // reopen path needs to clear it: reopened content is already saved.
+  const dirty = useRef(false);
 
   const version = useRef(0);
   // Generated once per composer, so a double-click or a retried request
@@ -102,21 +109,66 @@ export function Composer({
     if (creating.current) return;
     creating.current = true;
 
-    void api
-      .createDraft()
-      .then((result) => {
-        setDraftId(result.draftId);
-        setSenders(result.senders);
-        setFrom(result.senders[0]?.email ?? "");
+    // Reopening loads an existing draft; it must not create one. The draft GET
+    // carries the sender list for exactly this reason, so either path is a
+    // single request.
+    type Opened = {
+      senders: { name?: string | null; email: string }[];
+      draft: Awaited<ReturnType<typeof api.loadDraft>>["draft"] | null;
+      newId?: string;
+    };
+
+    const opening: Promise<Opened> = openDraftId
+      ? api.loadDraft(openDraftId)
+      : api.createDraft().then((r) => ({ senders: r.senders, draft: null, newId: r.draftId }));
+
+    void opening
+      .then(({ senders: allowed, draft, newId }) => {
+        setSenders(allowed);
+        setFrom(allowed[0]?.email ?? "");
+
+        if (!draft) {
+          setDraftId(newId ?? null);
+          return;
+        }
+
+        setDraftId(draft.id);
+        setTo(draft.to ?? []);
+        setCc(draft.cc ?? []);
+        setBcc(draft.bcc ?? []);
+        setShowCc((draft.cc?.length ?? 0) + (draft.bcc?.length ?? 0) > 0);
+        setSubject(draft.subject ?? "");
+        setBody(draft.bodyHtml ?? "");
+        setAttachments(
+          draft.attachments.map((a) => ({
+            key: a.id,
+            id: a.id,
+            filename: a.filename,
+            size: a.size,
+            contentType: a.contentType,
+            status: "done" as const,
+            progress: 1,
+          }))
+        );
+        version.current = draft.version ?? 0;
+        // Reopened content is already on the server; nothing is pending.
+        dirty.current = false;
+        setSaveState("saved");
       })
       .catch((cause) => {
         // Allow a retry: nothing was created, so the guard must not latch.
         creating.current = false;
-        setError(cause instanceof ApiError ? cause.message : "Could not start a draft.");
+        setError(
+          cause instanceof ApiError
+            ? cause.message
+            : openDraftId
+              ? "Could not open that draft."
+              : "Could not start a draft."
+        );
       });
-  }, []);
+  }, [openDraftId]);
+
   // ── Autosave ─────────────────────────────────────────────────────────────
-  const dirty = useRef(false);
   useEffect(() => {
     dirty.current = true;
   }, [to, cc, bcc, subject, body, attachments]);
@@ -175,6 +227,14 @@ export function Composer({
 
   const send = useCallback(async () => {
     if (!draftId || !canSend) return;
+
+    // Asked once, and only when the subject is genuinely empty. A prompt
+    // people see on every send is one they stop reading.
+    if (subject.trim() === "" && !confirmNoSubject) {
+      setConfirmNoSubject(true);
+      return;
+    }
+    setConfirmNoSubject(false);
     setSendState({ kind: "sending" });
     setError(null);
 
@@ -215,7 +275,20 @@ export function Composer({
       setSendState({ kind: "idle" });
       setError(cause instanceof ApiError ? cause.message : "The message could not be sent.");
     }
-  }, [draftId, canSend, to, cc, bcc, subject, body, attachments, from, onClose, onSent]);
+  }, [
+    draftId,
+    canSend,
+    to,
+    cc,
+    bcc,
+    subject,
+    body,
+    attachments,
+    from,
+    confirmNoSubject,
+    onClose,
+    onSent,
+  ]);
 
   /**
    * Close, discarding the draft only if nothing was written.
@@ -237,13 +310,15 @@ export function Composer({
       body.replace(/<[^>]*>/g, "").trim() === "" &&
       attachments.length === 0;
 
-    if (draftId && untouched && sendState.kind === "idle") {
+    // Only a draft this composer created. Reopening an empty draft and
+    // closing it must not delete something the user chose to keep.
+    if (draftId && !openDraftId && untouched && sendState.kind === "idle") {
       // Fire and forget: the composer should close instantly, and a failed
       // cleanup leaves an empty draft rather than blocking the user.
       void api.deleteDraft(draftId).catch(() => undefined);
     }
     onClose();
-  }, [draftId, to, cc, bcc, subject, body, attachments, sendState.kind, onClose]);
+  }, [draftId, openDraftId, to, cc, bcc, subject, body, attachments, sendState.kind, onClose]);
 
   // Cmd/Ctrl+Enter sends; Escape closes. Escape never discards written
   // content — the draft is already saved, so closing is safe.
@@ -396,7 +471,37 @@ export function Composer({
       {sendState.kind === "failed" && (
         <div role="alert" className="mx-3 mb-2 rounded-lg bg-danger-muted px-3 py-2 text-sm text-danger-ink">
           <strong className="font-medium">Delivery failed.</strong> {sendState.detail} Your draft is
-          safe in Drafts.
+          safe in Drafts.{" "}
+          <button
+            type="button"
+            onClick={() => void send()}
+            className="font-medium underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {confirmNoSubject && (
+        <div role="alert" className="mx-3 mb-2 rounded-lg bg-warning-muted px-3 py-2 text-sm text-warning-ink">
+          <strong className="font-medium">Send without a subject?</strong>{" "}
+          <button
+            type="button"
+            onClick={() => void send()}
+            className="font-medium underline underline-offset-2"
+          >
+            Send anyway
+          </button>
+          <span aria-hidden="true"> · </span>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmNoSubject(false);
+              document.getElementById("compose-subject")?.focus();
+            }}
+            className="font-medium underline underline-offset-2"
+          >
+            Add one
+          </button>
         </div>
       )}
       {invalid.length > 0 && (

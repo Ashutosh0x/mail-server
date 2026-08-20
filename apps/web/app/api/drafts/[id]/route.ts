@@ -1,5 +1,11 @@
 import type { NextRequest } from "next/server";
-import { deleteDraft, loadDraft, saveDraft, type DraftInput } from "@/lib/server/compose";
+import {
+  authorizedSenders,
+  deleteDraft,
+  loadDraft,
+  saveDraft,
+  type DraftInput,
+} from "@/lib/server/compose";
 import { isValidAddress, isHeaderSafe } from "@/lib/server/mime";
 import { guard, ok, fail, requireUser } from "@/lib/server/http";
 
@@ -15,7 +21,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params;
     const draft = loadDraft(auth.user.id, id);
     if (!draft) return fail(404, "not_found", "That draft no longer exists.");
-    return ok({ draft });
+    // Senders travel with the draft so reopening one needs a single request,
+    // rather than creating a throwaway draft just to learn who may send.
+    return ok({ draft, senders: authorizedSenders(auth.user.id) });
   });
 }
 

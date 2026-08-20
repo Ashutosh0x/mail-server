@@ -103,6 +103,8 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   const [accountSection, setAccountSection] = useState<AccountSection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [composing, setComposing] = useState(false);
+  /** Set when the composer is opening onto an existing draft rather than a new one. */
+  const [reopenDraftId, setReopenDraftId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
@@ -470,6 +472,15 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
                   active={index === cursor}
                   onOpen={() => {
                     setCursor(index);
+
+                    // A draft is not something to read — opening it means
+                    // resuming it. The row's latest message IS the draft row.
+                    if (activeMailbox?.role === "drafts") {
+                      setReopenDraftId(thread.latest.id);
+                      setComposing(true);
+                      return;
+                    }
+
                     setOpenId(thread.id);
                     if (thread.unreadCount > 0) void act("read", [thread.latest.id]);
                   }}
@@ -536,7 +547,16 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
 
       {composing && (
         <Composer
-          onClose={() => setComposing(false)}
+          // Remounts when the target draft changes, so the composer starts
+          // from that draft rather than trying to swap content underneath.
+          key={reopenDraftId ?? "new"}
+          openDraftId={reopenDraftId ?? undefined}
+          onClose={() => {
+            setComposing(false);
+            setReopenDraftId(null);
+            // The draft's preview may have changed while it was open.
+            void loadThreads(activeMailboxId, debouncedQuery);
+          }}
           onSent={() => {
             // Refresh so the message appears in Sent and the counts move.
             void loadFolders();

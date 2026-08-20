@@ -36,11 +36,19 @@ export const config = {
   maxMessageBytes: int("MAX_TOTAL_MESSAGE_SIZE_BYTES", 150 * MB),
 
   /**
-   * Largest message we will hand to SMTP for an EXTERNAL recipient. Base64
-   * inflates a payload by ~37%, so this is deliberately below the common
-   * 25 MB receiver cap: 18 MB of attachments is about 25 MB on the wire.
+   * Largest message we will hand to SMTP for an EXTERNAL recipient,
+   * measured BEFORE transfer encoding.
+   *
+   * 25 MB matches what Gmail and standard Google Workspace accept, and
+   * Google is explicit that the cap applies to "the total size of the
+   * message content and attachments before encoding".
+   *
+   * An earlier 18 MB default tried to leave room for base64 inflating the
+   * payload by ~37%. That was wrong: the inflation is not what receivers
+   * measure, so the compensation only made us refuse messages they would
+   * have accepted.
    */
-  maxOutboundMessageBytes: int("MAX_OUTBOUND_MESSAGE_SIZE_BYTES", 18 * MB),
+  maxOutboundMessageBytes: int("MAX_OUTBOUND_MESSAGE_SIZE_BYTES", 25 * MB),
 
   /** Per-user storage quota. */
   maxUserStorageBytes: int("MAX_USER_STORAGE_BYTES", 15 * GB),

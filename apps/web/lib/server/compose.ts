@@ -40,11 +40,24 @@ export interface DraftInput {
   references?: string[];
 }
 
+export interface DraftAttachment {
+  id: string;
+  filename: string;
+  size: number;
+  contentType: string;
+}
+
 export interface DraftRecord extends DraftInput {
   id: string;
   updatedAt: string;
   /** Bumped on every save. A stale version loses to a newer one. */
   version: number;
+  /**
+   * Full metadata for the attachments named by `attachmentIds`. Reopening a
+   * draft needs the name and size to render a row; the ids alone would leave
+   * the composer showing attachments it could not describe.
+   */
+  attachments: DraftAttachment[];
 }
 
 function mailboxFor(userId: string, role: string): string {
@@ -202,9 +215,19 @@ export function loadDraft(userId: string, draftId: string): DraftRecord | null {
 
   if (!row) return null;
 
-  const attachments = db()
-    .prepare(`SELECT id FROM attachments WHERE message_id = ? AND user_id = ?`)
-    .all(draftId, userId) as { id: string }[];
+  const attachments = (
+    db()
+      .prepare(
+        `SELECT id, filename, size_bytes, content_type
+           FROM attachments WHERE message_id = ? AND user_id = ?`
+      )
+      .all(draftId, userId) as Record<string, unknown>[]
+  ).map((a) => ({
+    id: a.id as string,
+    filename: a.filename as string,
+    size: Number(a.size_bytes ?? 0),
+    contentType: (a.content_type as string) ?? "application/octet-stream",
+  }));
 
   const recipients = readRecipients(draftId);
 
@@ -213,6 +236,7 @@ export function loadDraft(userId: string, draftId: string): DraftRecord | null {
     ...recipients,
     subject: (row.subject as string) ?? "",
     bodyHtml: (row.body_html as string) ?? "",
+    attachments,
     attachmentIds: attachments.map((a) => a.id),
     inReplyTo: (row.in_reply_to as string | null) ?? null,
     references: row.references_list ? (JSON.parse(row.references_list as string) as string[]) : [],
@@ -359,13 +383,36 @@ export function sendDraft(
     storage_key: string;
   }[];
 
+  /**
+   * Total size, measured BEFORE transfer encoding.
+   *
+   * Corrected against Google's published limits, which state the cap applies
+   * to "the total size of the message content and attachments before
+   * encoding". Two things follow from that:
+   *
+   *   - The BODY counts. This previously summed attachments alone, so a
+   *     message carrying a large quoted thread could exceed a receiver's cap
+   *     while passing our check.
+   *   - No base64 compensation. An earlier 18MB default left headroom for
+   *     ~37% encoding inflation, but receivers do not measure the encoded
+   *     size, so the compensation only refused messages they would have
+   *     accepted.
+   */
+  const bodyBytes =
+    Buffer.byteLength(draft.bodyHtml ?? "", "utf8") +
+    Buffer.byteLength(draft.subject ?? "", "utf8");
   const attachmentBytes = attachmentRows.reduce((sum, row) => sum + Number(row.size_bytes), 0);
-  if (attachmentBytes > config.maxOutboundMessageBytes) {
+  const totalBytes = bodyBytes + attachmentBytes;
+
+  if (totalBytes > config.maxOutboundMessageBytes) {
+    const mb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10;
     return {
       ok: false,
       error: {
         code: "too_large",
-        message: `Attachments total ${Math.round(attachmentBytes / 1024 / 1024)} MB, over the ${Math.round(config.maxOutboundMessageBytes / 1024 / 1024)} MB limit for outgoing mail.`,
+        message:
+          `This message is ${mb(totalBytes)} MB, over the ${mb(config.maxOutboundMessageBytes)} MB ` +
+          `limit for outgoing mail. Attachments account for ${mb(attachmentBytes)} MB.`,
       },
     };
   }

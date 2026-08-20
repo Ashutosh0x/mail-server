@@ -232,7 +232,20 @@ export const api = {
     }),
 
   loadDraft: (id: string) =>
-    request<{ draft: unknown }>(`/api/drafts/${encodeURIComponent(id)}`),
+    request<{
+      draft: {
+        id: string;
+        to: { name?: string | null; email: string }[];
+        cc?: { name?: string | null; email: string }[];
+        bcc?: { name?: string | null; email: string }[];
+        subject: string;
+        bodyHtml: string;
+        attachments: { id: string; filename: string; size: number; contentType: string }[];
+        version: number;
+        updatedAt: string;
+      };
+      senders: { name?: string | null; email: string }[];
+    }>(`/api/drafts/${encodeURIComponent(id)}`),
 
   deleteDraft: (id: string) =>
     request<{ deleted: true }>(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }),

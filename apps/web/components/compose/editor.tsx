@@ -41,6 +41,11 @@ interface Command {
   shortcut?: string;
 }
 
+const HISTORY: Command[] = [
+  { id: "undo", label: "Undo", icon: icons.editor.undo, command: "undo", shortcut: "Ctrl+Z" },
+  { id: "redo", label: "Redo", icon: icons.editor.redo, command: "redo", shortcut: "Ctrl+Shift+Z" },
+];
+
 const PRIMARY: Command[] = [
   { id: "bold", label: "Bold", icon: icons.editor.bold, command: "bold", shortcut: "Ctrl+B" },
   { id: "italic", label: "Italic", icon: icons.editor.italic, command: "italic", shortcut: "Ctrl+I" },
@@ -70,19 +75,28 @@ export function Editor({
   const [linkUrl, setLinkUrl] = useState("");
   const savedRange = useRef<Range | null>(null);
 
-  // Only write into the DOM when the value came from OUTSIDE this component —
-  // writing back what the user just typed would move the caret to the start on
-  // every keystroke.
+  /**
+   * The last HTML this editor reported upwards.
+   *
+   * Only a value from OUTSIDE may be written into the DOM — writing back what
+   * the user just typed would move the caret to the start on every keystroke.
+   * Remembering what we emitted is what tells the two apart. Running on mount
+   * alone is not enough: a reopened draft arrives after the fetch resolves,
+   * and that content would never reach the DOM.
+   */
+  const lastEmitted = useRef<string | null>(null);
+
   useEffect(() => {
     const node = ref.current;
-    if (node && node.innerHTML !== value) node.innerHTML = value;
-    // Intentionally not depending on `value`: see above. Runs on mount and on
-    // an external reset only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!node) return;
+    if (value === lastEmitted.current) return;
+    if (node.innerHTML !== value) node.innerHTML = value;
+  }, [value]);
 
   const emit = useCallback(() => {
-    if (ref.current) onChange(ref.current.innerHTML);
+    if (!ref.current) return;
+    lastEmitted.current = ref.current.innerHTML;
+    onChange(ref.current.innerHTML);
   }, [onChange]);
 
   /** Reflect the caret's formatting so the toolbar shows real state. */
@@ -198,6 +212,10 @@ export function Editor({
         aria-controls="compose-editor"
         className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2 py-1"
       >
+        {HISTORY.map((command) => (
+          <ToolbarButton key={command.id} command={command} active={false} onRun={() => run(command)} />
+        ))}
+        <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
         {PRIMARY.map((command) => (
           <ToolbarButton
             key={command.id}

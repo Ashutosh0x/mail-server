@@ -47,3 +47,6 @@ yarn-error.log*
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Temporary databases created by DB-backed tests.
+.test-tmp/

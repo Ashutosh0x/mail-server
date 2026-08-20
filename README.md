@@ -48,8 +48,11 @@ and the storage federation layer.
 > **Compose and send now work.** A draft becomes a real RFC 5322 message and is
 > queued; with SMTP configured it is delivered and the UI reports `sent` only
 > once a mail server has accepted it. Without SMTP it says `queued`, honestly.
-> Receiving mail (IMAP/JMAP) is still not built.
-> Full picture in **[docs/architecture-status.md](docs/architecture-status.md)**.
+> Drafts can be reopened from the Drafts mailbox with their recipients, body and
+> attachments intact. Receiving mail (IMAP/JMAP) is still not built.
+> Full picture in **[docs/architecture-status.md](docs/architecture-status.md)**,
+> and a feature-by-feature composer audit in
+> **[docs/COMPOSER-FINAL-AUDIT.md](docs/COMPOSER-FINAL-AUDIT.md)**.
 
 ## Quick start
 
