@@ -1,7 +1,7 @@
 # Architecture status
 
 **Last updated:** 2026-08-20
-**Baseline:** `turbo typecheck` 3/3 · `turbo test` 226 passing · `next build` clean
+**Baseline:** `turbo typecheck` 3/3 · `turbo test` 274 passing · `next build` clean
 
 This is the single source of truth for what exists. It supersedes every status
 claim in the original planning blueprints. Where this file and a blueprint
@@ -33,7 +33,7 @@ therefore `VERIFIED` **upstream** and `BLOCKED` locally, and both are shown.
 | Component | Status | Evidence | Next action |
 |---|---|---|---|
 | **Mail engine** (Stalwart) | `VERIFIED` upstream · `BLOCKED` locally | v0.16.14, published 2026-07-20. Now pinned in `docker-compose.yml` | Stand up a container; run the config through it |
-| **SMTP** | `PLANNED` | Provided by Stalwart. No client code here. `SMTP_HOST` unset disables the composer with a reason | Build the submission client (ADR-0007) |
+| **SMTP submission** | `IMPLEMENTED` | `lib/server/transport.ts` over nodemailer; MIME is ours (`mime.ts`, 48 tests). Verified end to end against a live SMTP server | Move delivery to a background worker |
 | **IMAP** | `PLANNED` | Provided by Stalwart (IMAP4rev2). No client code here | Prefer JMAP; IMAP only for legacy clients |
 | **JMAP** | `PLANNED` | Provided by Stalwart. Our domain types are already JMAP-shaped | `packages/types/src/mail.ts` is the contract; write the client |
 | **Calendar** | `PLANNED` — **rearchitected** | Was "ground-up datastore". Superseded by ADR-0002 | Build a CalDAV client layer, not a datastore |

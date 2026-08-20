@@ -152,6 +152,10 @@ CREATE TABLE IF NOT EXISTS messages (
   scheduled_at    TEXT,
   received_at     TEXT NOT NULL,
   sent_at         TEXT,
+  -- Optimistic concurrency for drafts. A client sends the version it read;
+  -- a mismatch is a conflict to resolve, never a silent overwrite.
+  version         INTEGER NOT NULL DEFAULT 0,
+  updated_at      TEXT,
   deleted_at      TEXT,
   created_at      TEXT NOT NULL,
   UNIQUE (user_id, message_id)

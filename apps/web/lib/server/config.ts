@@ -94,6 +94,18 @@ export const config = {
     port: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587,
     user: process.env.SMTP_USER ?? null,
     from: process.env.SMTP_FROM ?? null,
+    /**
+     * Permit an unencrypted SMTP connection.
+     *
+     * Off by default, and `requireTLS` otherwise makes the connection FAIL
+     * rather than silently downgrade — a quiet downgrade is worse than a
+     * refusal, because nobody notices mail leaving in the clear.
+     *
+     * The legitimate use is relaying to a trusted MTA on loopback, where the
+     * traffic never touches a network. Enabling it for a remote host means
+     * sending mail, and credentials, unencrypted across it.
+     */
+    allowInsecure: process.env.SMTP_ALLOW_INSECURE === "true",
   },
 
   /**

@@ -15,6 +15,7 @@ import { Swipeable } from "./interaction/swipeable";
 import { ProfileMenu } from "./account/profile-menu";
 import { AccountCenter, type AccountSection } from "./account/account-center";
 import { ShortcutsDialog } from "./shortcuts-dialog";
+import { Composer } from "./compose/composer";
 
 const DENSITIES = [
   { id: "compact" as const, label: "Compact", icon: icons.settings.densityCompact },
@@ -101,6 +102,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   /** Null when the account center is closed. */
   const [accountSection, setAccountSection] = useState<AccountSection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [composing, setComposing] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
@@ -243,7 +245,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
   useEffect(() => {
     // An overlay owns the keyboard while it is open. Without this, `j` scrolls
     // the message list behind the account center and Escape closes both.
-    if (accountSection !== null || shortcutsOpen) return undefined;
+    if (accountSection !== null || shortcutsOpen || composing) return undefined;
 
     let pendingG = false;
     function onKeyDown(event: KeyboardEvent) {
@@ -282,6 +284,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         case "#": if (currentId) void act("trash", [currentId]); event.preventDefault(); break;
         case "u": if (currentId) void act(visible[cursor]!.unreadCount > 0 ? "read" : "unread", [currentId]); event.preventDefault(); break;
         case "g": pendingG = true; break;
+        case "c": setComposing(true); event.preventDefault(); break;
         case "/": document.getElementById("mail-search")?.focus(); event.preventDefault(); break;
         case ",": setSidebarCollapsed((v) => !v); event.preventDefault(); break;
         default: break;
@@ -289,7 +292,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen]);
+  }, [visible, cursor, mailboxes, act, accountSection, shortcutsOpen, composing]);
 
   if (loading) {
     return (
@@ -329,7 +332,7 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
         activeMailboxId={activeMailboxId ?? ""}
         collapsed={sidebarCollapsed}
         onSelect={(id) => { setActiveMailboxId(id); setCursor(0); setOpenId(null); }}
-        onCompose={() => toast.show("Compose is not built yet — see the roadmap in the README.", { tone: "info" })}
+        onCompose={() => setComposing(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -530,6 +533,17 @@ export function MailClient({ user, onSignOut }: { user: SessionInfo; onSignOut: 
       )}
 
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+
+      {composing && (
+        <Composer
+          onClose={() => setComposing(false)}
+          onSent={() => {
+            // Refresh so the message appears in Sent and the counts move.
+            void loadFolders();
+            void loadThreads(activeMailboxId, debouncedQuery);
+          }}
+        />
+      )}
     </div>
   );
 }

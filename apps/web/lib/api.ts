@@ -193,6 +193,62 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
+  // ── Compose ──────────────────────────────────────────────────────────────
+
+  createDraft: () =>
+    request<{ draftId: string; senders: { name?: string | null; email: string }[] }>(
+      "/api/drafts",
+      { method: "POST" }
+    ),
+
+  saveDraft: (
+    id: string,
+    draft: {
+      to: { name?: string | null; email: string }[];
+      cc?: { name?: string | null; email: string }[];
+      bcc?: { name?: string | null; email: string }[];
+      subject: string;
+      bodyHtml: string;
+      attachmentIds?: string[];
+      /** The version last read. Omit to force-save, which skips the check. */
+      version?: number;
+    }
+  ) =>
+    request<{ version: number; savedAt: string }>(`/api/drafts/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(draft),
+    }),
+
+  loadDraft: (id: string) =>
+    request<{ draft: unknown }>(`/api/drafts/${encodeURIComponent(id)}`),
+
+  deleteDraft: (id: string) =>
+    request<{ deleted: true }>(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  /**
+   * Send. The idempotency key makes a double-click or a retried request
+   * return the original result rather than sending twice.
+   */
+  sendDraft: (id: string, idempotencyKey: string, from?: string) =>
+    request<{
+      messageId: string;
+      queueId: string;
+      status: string;
+      rfcMessageId: string;
+      delivery: { status: string; detail: string };
+      transportConfigured: boolean;
+    }>(`/api/drafts/${encodeURIComponent(id)}/send`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ from }),
+    }),
+
+  outboundStatus: (queueId: string) =>
+    request<{
+      queue: { id: string; status: string; attempts: number; lastError: string | null };
+      transportConfigured: boolean;
+    }>(`/api/outbound/${encodeURIComponent(queueId)}`),
+
   passkeys: () => request<{ passkeys: PasskeyRecord[] }>("/api/account/passkeys"),
 
   /** Server-issued registration options. Consumed by startRegistration(). */

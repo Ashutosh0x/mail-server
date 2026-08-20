@@ -22,6 +22,7 @@ const GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = 
       { keys: ["Esc"], label: "Close message" },
       { keys: [","], label: "Toggle sidebar" },
       { keys: ["/"], label: "Focus search" },
+      { keys: ["C"], label: "Compose" },
     ],
   },
   {
@@ -43,6 +44,13 @@ const GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = 
       { keys: ["E"], label: "Archive" },
       { keys: ["#"], label: "Move to trash" },
       { keys: ["U"], label: "Mark read or unread" },
+    ],
+  },
+  {
+    title: "Compose",
+    items: [
+      { keys: ["Ctrl", "Enter"], label: "Send" },
+      { keys: ["Esc"], label: "Close composer (draft is kept)" },
     ],
   },
 ];
